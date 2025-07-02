@@ -1,0 +1,608 @@
+{
+  "product": {
+    "name": [
+      {
+        "stdName": "LENOVO x240 M5",
+        "regular": "x240 M5"
+      },
+      {
+        "stdName": "LENOVO SN550",
+        "regular": "SN550"
+      },
+      {
+        "stdName": "LENOVO SR630 V2",
+        "regular": "SR630 V2"
+      },
+      {
+        "stdName": "LENOVO SR630",
+        "regular": "SR630"
+      },
+      {
+        "stdName": "LENOVO SR590",
+        "regular": "SR590"
+      },
+      {
+        "stdName": "LENOVO SR660 V2",
+        "regular": "SR660 V2"
+      },
+      {
+        "stdName": "LENOVO SR650",
+        "regular": "SR650"
+      },
+      {
+        "stdName": "LENOVO 3650 M5",
+        "regular": "x3650"
+      },
+      {
+        "stdName": "LENOVO DN8848 V2",
+        "regular": "DN8848 V2"
+      },
+      {
+        "stdName": "LENOVO SR665 V3",
+        "regular": "SR665 V3"
+      },
+      {
+        "stdName": "LENOVO WR5220 G3",
+        "regular": "WR5220 G3"
+      },
+      {
+        "stdName": "HP BL460c Gen9",
+        "regular": "BL460c Gen9"
+      },
+      {
+        "stdName": "HP DL360 Gen9",
+        "regular": "DL360 Gen9"
+      },
+      {
+        "stdName": "HP DL360 Gen10",
+        "regular": "DL360 Gen10"
+      },
+      {
+        "stdName": "HP DL380 Gen9",
+        "regular": "DL380 Gen9"
+      },
+      {
+        "stdName": "HP DL388 Gen9",
+        "regular": "DL388 Gen9"
+      },
+      {
+        "stdName": "DELL M630",
+        "regular": "PowerEdge M630"
+      },
+      {
+        "stdName": "DELL M640",
+        "regular": "PowerEdge M640"
+      },
+      {
+        "stdName": "DELL R430",
+        "regular": "PowerEdge R430"
+      },
+      {
+        "stdName": "DELL R630",
+        "regular": "PowerEdge R630"
+      },
+      {
+        "stdName": "DELL R730xd",
+        "regular": "PowerEdge R730xd"
+      },
+      {
+        "stdName": "DELL R640",
+        "regular": "PowerEdge R640"
+      },
+      {
+        "stdName": "DELL R740xd",
+        "regular": "PowerEdge R740xd"
+      },
+      {
+        "stdName": "DELL R650",
+        "regular": "PowerEdge R650"
+      },
+      {
+        "stdName": "DELL R750",
+        "regular": "PowerEdge R750"
+      },
+      {
+        "stdName": "HUAWEI CH121 V5",
+        "regular": "CH121 V5"
+      },
+      {
+        "stdName": "HUAWEI 1288H V5",
+        "regular": "1288H V5"
+      },
+      {
+        "stdName": "HUAWEI 2288H V5",
+        "regular": "2288H V5"
+      },
+      {
+        "stdName": "XFUSION 1288H V6",
+        "regular": "1288H V6"
+      },
+      {
+        "stdName": "XFUSION 2288H V6",
+        "regular": "2288H V6"
+      },
+      {
+        "stdName": "XFUSION 1288H V7",
+        "regular": "1288H V7"
+      },
+      {
+        "stdName": "XFUSION 2288H V7",
+        "regular": "2288H V7"
+      },
+      {
+        "stdName": "XFUSION 2258 V7",
+        "regular": "2258 V7"
+      },
+      {
+        "stdName": "XFUSION 5288 V6",
+        "regular": "5288 V6"
+      },
+      {
+        "stdName": "HUAWEI Arm 2280 V2",
+        "regular": "TaiShan 200 (Model 2280)"
+      },
+      {
+        "stdName": "H3C R4300 G3",
+        "regular": "R4300 G3"
+      },
+      {
+        "stdName": "H3C R4300 G5",
+        "regular": "R4300 G5"
+      },
+      {
+        "stdName": "H3C B5700 G3",
+        "regular": "B5700 G3"
+      },
+      {
+        "stdName": "H3C R4700 G3",
+        "regular": "R4700 G3"
+      },
+      {
+        "stdName": "H3C R4700 G5",
+        "regular": "R4700 G5"
+      },
+      {
+        "stdName": "H3C R4900 G3",
+        "regular": "R4900 G3"
+      },
+      {
+        "stdName": "H3C R4900 G5",
+        "regular": "R4900 G5"
+      },
+      {
+        "stdName": "H3C R4900 G6",
+        "regular": "R4900 G6"
+      },
+      {
+        "stdName": "H3C R4700 G6",
+        "regular": "R4700 G6"
+      },
+      {
+        "stdName": "H3C R4950 G6",
+        "regular": "R4950 G6"
+      },
+      {
+        "stdName": "INSPUR SA5212M5",
+        "regular": "SA5212M5"
+      },
+      {
+        "stdName": "INSPUR NF5466M6",
+        "regular": "NF5466M6"
+      },
+      {
+        "stdName": "INSPUR NF3280A7",
+        "regular": "NF3280-A7"
+      },
+      {
+        "stdName": "INSPUR SA5212M7",
+        "regular": "SA5212-M7"
+      },
+      {
+        "stdName": "ZTE R5350 G5",
+        "regular": "R5350 G5"
+      }
+    ]
+  },
+  "gpu": {
+    "product": [
+      {
+        "stdName": "NVIDIA GeForce GTX 1080 Ti",
+        "regular": "10de:1b06"
+      },
+      {
+        "stdName": "NVIDIA GeForce RTX 2080 Ti Rev. A",
+        "regular": "10de:1e07"
+      },
+      {
+        "stdName": "NVIDIA GeForce RTX 2080 Ti",
+        "regular": "10de:1e04"
+      },
+      {
+        "stdName": "NVIDIA GeForce GTX 1050",
+        "regular": "10de:1c81"
+      },
+      {
+        "stdName": "NVIDIA GeForce GTX 1050 Ti",
+        "regular": "10de:1c82"
+      },
+      {
+        "stdName": "NVIDIA GeForce RTX 2060 SUPER",
+        "regular": "10de:1f06"
+      },
+      {
+        "stdName": "NVIDIA GeForce RTX 3090",
+        "regular": "10de:2204"
+      },
+      {
+        "stdName": "NVIDIA GeForce RTX 4090",
+        "regular": "10de:2684"
+      },
+      {
+        "stdName": "NVIDIA GeForce GTX 1660 SUPER",
+        "regular": "10de:21c4"
+      },
+      {
+        "stdName": "NVIDIA L40",
+        "regular": "10de:26b5|10de:26f5"
+      },
+      {
+        "stdName": "NVIDIA L4",
+        "regular": "10de:27b8"
+      },
+      {
+        "stdName": "NVIDIA A30 PCIe",
+        "regular": "10de:20b7"
+      },
+      {
+        "stdName": "NVIDIA A100 PCIe",
+        "regular": "10de:20b0|10de:20b1|10de:20b2|10de:20b3|10de:20b5|10de:20f0|10de:20f1|10de:20f2"
+      },
+      {
+        "stdName": "NVIDIA A800 PCIe",
+        "regular": "10de:20f3|10de:20f5|10de:20f6"
+      },
+      {
+        "stdName": "AMD RX560 GPU",
+        "regular": "1002:67ff"
+      },
+      {
+        "stdName": "AMD Vega64 GPU",
+        "regular": "1002:687f"
+      },
+      {
+        "stdName": "AMD WX8200 GPU",
+        "regular": "1002:6868"
+      },
+      {
+        "stdName": "AMD Radeon PRO WX9100",
+        "regular": "1002:6861"
+      },
+      {
+        "stdName": "AMD Radeon Pro WX 4100",
+        "regular": "1002:67e3"
+      },
+      {
+        "stdName": "AMD Radeon ES1000",
+        "regular": "1002:515e"
+      },
+      {
+        "stdName": "AMD Radeon Pro WX 5100",
+        "regular": "1002:67c7"
+      }
+    ]
+  },
+  "disk": {
+    "manufacturer": [
+      {
+        "stdName": "INTEL",
+        "regular": "^SSD"
+      },
+      {
+        "stdName": "MICRON",
+        "regular": "^MT"
+      },
+      {
+        "stdName": "SAMSUNG",
+        "regular": "^MZ"
+      },
+      {
+        "stdName": "SEAGATE",
+        "regular": "^ST"
+      },
+      {
+        "stdName": "HGST",
+        "regular": "^HU"
+      },
+      {
+        "stdName": "WD",
+        "regular": "(^WD|^WU)"
+      },
+      {
+        "stdName": "TOSHIBA",
+        "regular": "(^AL)|(^MG)"
+      },
+      {
+        "stdName": "HP",
+        "regular": "(^MB)|(^EG)|(^MM)"
+      },
+      {
+        "stdName": "DELL",
+        "regular": "^DL"
+      },
+      {
+        "stdName": "SAMSUNG",
+        "regular": "^MZ"
+      },
+      {
+        "stdName": "SAMSUNG",
+        "regular": "^MZ"
+      },
+      {
+        "stdName": "YMTC",
+        "regular": "^SE"
+      },
+      {
+        "stdName": "LONGSYS",
+        "regular": "^RSY"
+      },
+      {
+        "stdName": "OCZ",
+        "regular": "^370"
+      },
+      {
+        "stdName": "UnionMemory",
+        "regular": "^UP"
+      },
+      {
+        "stdName": "Huawei",
+        "regular": "^HWE"
+      }
+    ],
+    "product": [
+        {
+          "stdName": "Intel S3500",
+          "regular": "(SSDSC2BB080G4|SSDSC2BB120G4|SSDSC2BB160G4|SSDSC2BB240G4|SSDSC2BB300G4|SSDSC2BB480G4|SSDSC2BB600G4|SSDSC2BB800G4)"
+        },
+        {
+          "stdName": "Intel S3510",
+          "regular": "(SSDSC2BB080G6|SSDSC2BB120G6|SSDSC2BB240G6|SSDSC2BB480G6|SSDSC2BB800G6|SSDSC2BB012T6|SSDSC2BB016T6|SSDSC2BB080G6X|SSDSC2BB120G6X)"
+        },
+        {
+          "stdName": "Intel S3710",
+          "regular": "(SSDSC2BA200G4|SSDSC2BA400G4|SSDSC2BA800G4|SSDSC2BA012T4)"
+        },
+        {
+          "stdName": "Intel S3520",
+          "regular": "(SSDSC2BB120G7|SSDSC2BB150G7|SSDSC2BB240G7|SSDSC2BB480G7|SSDSC2BB800G7|SSDSC2BB960G7|SSDSC2BB012T7|SSDSC2BB016T7|SSDSC2BR240G7)"
+        },
+        {
+          "stdName": "Intel S4500",
+          "regular": "(SSDSC2KB240G7|SSDSC2KB480G7|SSDSC2KB960G7|SSDSC2KB019T7|SSDSC2KB038T7)"
+        },
+        {
+          "stdName": "Intel S4600",
+          "regular": "(SSDSC2KG240G7|SSDSC2KG400G7|SSDSC2KG480G7|SSDSC2KG960G7|SSDSC2KG019T7)"
+        },
+        {
+          "stdName": "Intel S4510",
+          "regular": "(SSDSC2KB240G8|SSDSC2KB480G8|SSDSC2KB960G8|SSDSC2KB019T8|SSDSC2KB038T8|SSDSC2KB076T8)"
+        },
+        {
+          "stdName": "Intel S4610",
+          "regular": "(SSDSC2KG240G8|SSDSC2KG480G8|SSDSC2KG960G8|SSDSC2KG019T8|SSDSC2KG038T8|SSDSC2KG076T8)"
+        },
+        {
+          "stdName": "Intel S4520",
+          "regular": "(SSDSC2KB240GZ|SSDSC2KB480GZ|SSDSC2KB960GZ|SSDSC2KB019TZ|SSDSC2KB038TZ|SSDSC2KB076TZ)"
+        },
+        {
+          "stdName": "Intel S4620",
+          "regular": "(SSDSC2KG480GZ|SSDSC2KG960GZ|SSDSC2KG019TZ|SSDSC2KG038TZ)"
+        },
+        {
+          "stdName": "Intel P3700",
+          "regular": "(SSDPE2MD400G4|SSDPE2MD800G4|SSDPE2MD016T4|SSDPE2MD020T4)"
+        },
+        {
+          "stdName": "Intel P4600",
+          "regular": "(SSDPE2KE016T7|SSDPE2KE020T7|SSDPE2KE032T7|SSDPE2KE064T7)"
+        },
+        {
+          "stdName": "Intel P4510",
+          "regular": "(SSDPE2KX010T8|SSDPE2KX016T8|SSDPE2KX020T8|SSDPE2KX040T8|SSDPE2KX080T8)"
+        },
+        {
+          "stdName": "Intel P4610",
+          "regular": "(SSDPE2KE016T8|SSDPE2KE032T8|SSDPE2KE064T8|SSDPE2KE076T8)"
+        },
+        {
+          "stdName": "Intel P5510",
+          "regular": "(SSDPF2KX038TZ|SSDPF2KX076TZ)"
+        },
+        {
+          "stdName": "Intel P5316",
+          "regular": "(SSDPF2NV153TZ|SSDPF2NV307TZ)"
+        },
+        {
+          "stdName": "Intel P5520",
+          "regular": "(SSDPF2KX019T1|SSDPF2KX038T1|SSDPF2KX076T1|SSDPF2KX153T1)"
+        },
+        {
+          "stdName": "Intel P5620",
+          "regular": "(SSDPF2KE016T1|SSDPF2KE032T1|SSDPF2KE064T1|SSDPF2KE128T1)"
+        },
+        {
+          "stdName": "Intel P5530",
+          "regular": "(SSDPF2KX019XZ|SSDPF2KX038XZ)"
+        },
+        {
+          "stdName": "Solidigm P5430",
+          "regular": "(SBFPF2BU038T|SBFPF2BU076T)"
+        },
+        {
+          "stdName": "Kioxia CD8-V",
+          "regular": "(KCD81VUG1T60|KCD81VUG3T20|KCD81VUG6T40)"
+        },
+        {
+          "stdName": "Kioxia CD8-R",
+          "regular": "(KCD81RUG1T92|KCD81RUG3T84|KCD81RUG7T68)"
+        },
+        {
+          "stdName": "Kioxia CD7-V",
+          "regular": "(KCD71VUG1T60|KCD71VUG3T20|KCD71VUG6T40)"
+        },
+        {
+          "stdName": "Kioxia CD7-R",
+          "regular": "(KCD71RUG1T92|KCD71RUG3T84|KCD71RUG7T68)"
+        },
+        {
+          "stdName": "Micron 5100PRO",
+          "regular": "(MTFDDAK240TCB|MTFDDAK480TCB|MTFDDAK960TCB|MTFDDAK1T9TCB|MTFDDAK3T8TCB|MTFDDAK7T6TCB)"
+        },
+        {
+          "stdName": "Micron 5100MAX",
+          "regular": "(MTFDDAK240TCC|MTFDDAK480TCC|MTFDDAK960TCC|MTFDDAK1T9TCC)"
+        },
+        {
+          "stdName": "Micron 5200ECO",
+          "regular": "(MTFDDAK480TDC|MTFDDAK960TDC|MTFDDAK1T9TDC|MTFDDAK3T8TDC|MTFDDAK7T6TDC)"
+        },
+        {
+          "stdName": "Micron 5200PRO",
+          "regular": "(MTFDDAK960TDD|MTFDDAK1T9TDD|MTFDDAK3T8TDD)"
+        },
+        {
+          "stdName": "Micron 5200MAX",
+          "regular": "(MTFDDAK240TDN|MTFDDAK480TDN|MTFDDAK960TDN|MTFDDAK1T9TDN)"
+        },
+        {
+          "stdName": "Micron 5300PRO",
+          "regular": "(MTFDDAK960TDS|MTFDDAK960TDS|MTFDDAK960TDS|MTFDDAK480TDS|MTFDDAK480TDS|MTFDDAK480TDS|MTFDDAK3T8TDS|MTFDDAK3T8TDS|MTFDDAK3T8TDS|MTFDDAK1T9TDS|MTFDDAK1T9TDS|MTFDDAK1T9TDS|MTFDDAK240TDS|MTFDDAK240TDS|MTFDDAK240TDS)"
+        },
+        {
+          "stdName": "Micron 5300MAX",
+          "regular": "(MTFDDAK960TDT|MTFDDAK960TDT|MTFDDAK960TDT|MTFDDAK480TDT|MTFDDAK480TDT|MTFDDAK480TDT|MTFDDAK3T8TDT|MTFDDAK3T8TDT|MTFDDAK3T8TDT|MTFDDAK1T9TDT|MTFDDAK1T9TDT|MTFDDAK1T9TDT|MTFDDAK240TDT|MTFDDAK240TDT|MTFDDAK240TDT)"
+        },
+        {
+          "stdName": "Micron 5210ION",
+          "regular": "(MTFDDAK960QDE|MTFDDAK1T9QDE|MTFDDAK3T8QDE|MTFDDAK7T6QDE)"
+        },
+        {
+          "stdName": "Samsung PM883",
+          "regular": "(MZ7LH960HAJR|MZ7LH240HAHQ|MZ7LH3T8HMLT|MZ7LH480HAHQ|MZ7LH7T6HMLA|MZ7LH1T9HMLT)"
+        },
+        {
+          "stdName": "Samsung PM86a",
+          "regular": "(MZ7LM240HMHQ|MZ7LM480HMHQ|MZ7LM960HMJP|MZ7LM1T9HMJP|MZ7LM3T8HMLP)"
+        },
+        {
+          "stdName": "Samsung PM893",
+          "regular": "(MZ7L3240HCHQ|MZ7L3480HCHQ|MZ7L3960HCJR|MZ7L31T9HBLT|MZ7L33T8HBLT|MZ7L37T6HBLA)"
+        },
+        {
+          "stdName": "Samsung PM897",
+          "regular": "(MZ7L3480HBLT|MZ7L3960HBLT|MZ7L31T9HBNA|MZ7L33T8HBNA"
+        },
+        {
+          "stdName": "Samsung PM9A3",
+          "regular": "(MZQL2960HCJR|MZQL21T9HCJR|MZQL23T8HCLS)"
+        },
+        {
+          "stdName": "Samsung PM1733",
+          "regular": "(MZXL5960HBHQ|MZWLJ1T9HBJR|MZWLJ3T8HBLS|MZWLJ7T6HALA)"
+        },
+        {
+          "stdName": "YMTC PE310",
+          "regular": "(YMES2XJ11E22ME|YMES2XJ12E22ME|YMES2XJ09E22ME|YMES2XJ13E22HE|YMES2XJ14E22HE|YMES2XJ15E22HE)"
+        },
+        {
+          "stdName": "UnionMemory UH711a",
+          "regular": "(UP2A61T9SD004LX|UP2A63T4SD004LX|UP2A67T6SD004LX)"
+        },
+        {
+          "stdName": "Huawei ES3521A V6",
+          "regular": "(HWE62ST31T9L003N|HWE62ST33T8L006N|HWE62ST3960L003N)"
+        }
+      ]
+  },
+  "raid": {
+  },
+  "cpu": {
+  },
+  "memory": {
+    "manufacturer": [
+      {
+        "stdName": "Unknow",
+        "regular": "other"
+      }
+    ]
+  },
+  "network": {
+    "product": [
+      {
+        "stdName": "Intel x722 10Gb",
+        "regular": "(8086:37ce|8086:37cc|8086:37d0|8086:37d2|8086:37d3|8086:37d4)"
+      },
+      {
+        "stdName": "Intel x520 10Gb",
+        "regular": "8086:10fb|8086:10f8|8086:154d"
+      },
+      {
+        "stdName": "Intel I350 1Gb",
+        "regular": "8086:1521"
+      },
+      {
+        "stdName": "Intel x710 10Gb",
+        "regular": "8086:1572"
+      },
+      {
+        "stdName": "Intel x722 1Gb",
+        "regular": "8086:37d1"
+      },
+      {
+        "stdName": "Intel E810 25Gb",
+        "regular": "8086:159b"
+      },
+      {
+        "stdName": "Intel x710 25Gb",
+        "regular": "8086:158b"
+      },
+      {
+        "stdName": "BCM5719 1Gb",
+        "regular": "14e4:1657"
+      },
+      {
+        "stdName": "BCM5720 1Gb",
+        "regular": "14e4:165f"
+      },
+      {
+        "stdName": "BCM57840 10/20Gb",
+        "regular": "14e4:16a2"
+      },
+      {
+        "stdName": "BCM57840 10Gb",
+        "regular": "14e4:16a1"
+      },
+      {
+        "stdName": "BCM57414 10Gb/25Gb RDMA",
+        "regular": "14e4:16d7"
+      },
+      {
+        "stdName": "Emulex OneConnect 10Gb",
+        "regular": "10df:0720"
+      },
+      {
+        "stdName": "Mellanox CX4 25Gb",
+        "regular": "15b3:1015"
+      },
+      {
+        "stdName": "Mellanox CX5 25Gb",
+        "regular": "15b3:1017"
+      },
+      {
+        "stdName": "Mellanox CX6 25Gb",
+        "regular": "15b3:101f"
+      }
+    ]
+  }
+}
