@@ -56,7 +56,6 @@ type controller struct {
 	Battery        []*battery       `json:"battery,omitempty"`         // 电池信息
 	LogicalDrives  []*logicalDrive  `json:"logical_drives,omitempty"`  // 逻辑硬盘列表
 	PhysicalDrives []*physicalDrive `json:"physical_drives,omitempty"` // 物理硬盘列表
-
 }
 
 type backplane struct {

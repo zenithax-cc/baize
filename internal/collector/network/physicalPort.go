@@ -75,6 +75,11 @@ func (n *Network) parsePhysicalInterface(ctx context.Context, bus string) error 
 	if err != nil {
 		errs = append(errs, err)
 	}
+
+	if net == "" {
+		return nil
+	}
+
 	res.Name = net
 
 	basicInfo, err := n.getBaiscInfo(ctx, net)

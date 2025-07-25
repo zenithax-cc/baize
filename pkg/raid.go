@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zenithax-cc/baize/common/utils"
+	"github.com/zenithax-cc/baize/common/color"
 	"github.com/zenithax-cc/baize/internal/collector/raid"
 )
 
@@ -28,23 +28,87 @@ func (r *RAID) PrintJson() {
 }
 
 func (r *RAID) PrintBrief() {
+	var sb strings.Builder
+	sb.Grow(r.estimatePrintSize())
+	sb.WriteString("[RAID INFO]\n")
+
 	if err := r.getSystemDiskRAID(); err != nil {
-		fmt.Printf("%v \n", err)
+		fmt.Fprintf(&sb, "get system disk raid error: %v\n", err)
+	} else {
+		colorRaid := color.Green(r.SystemDisk)
+		if r.SystemDisk != "RAID1" {
+			colorRaid = color.Red(r.SystemDisk)
+		}
+
+		sb.WriteString(printSeparator("SystemDiskRAID", colorRaid, true, 1))
 	}
 
-	println("[RAID INFO]")
-	fmt.Fprintf(os.Stdout, "%s%-*s: %v\n\n", "    ", 36, "SystemDisk", r.SystemDisk)
-	ctrFields := []string{"ProductName", "ID", "ControllerStatus", "LogicalDrives", "Location", "State", "Capacity"}
-	var sb *strings.Builder
+	ctrFields := []string{"ProductName", "ID", "ControllerStatus"}
+	ldFields := []string{"LogicalDrives", "Location", "State", "Capacity"}
+
+	type otherPD struct {
+		jbod  map[string]int
+		ugood map[string]int
+		other map[string]int
+	}
+
+	otherPDs := otherPD{
+		jbod:  map[string]int{},
+		ugood: map[string]int{},
+		other: map[string]int{},
+	}
+
 	for _, ctr := range r.Controllers.Controller {
-		sb = utils.SelectFields(ctr, ctrFields, 1)
+		sb.WriteString(selectFields(ctr, ctrFields, 1, nil).String())
+
 		for _, vd := range ctr.LogicalDrives {
+			sb.WriteString("\n" + selectFields(vd, ldFields, 2, nil).String())
+			pdMap := map[string]int{}
 			for _, pd := range vd.PhysicalDrives {
-				pdDetail := fmt.Sprintf("%s %s %s %s", pd.Vendor, pd.Capacity, pd.FormFactor, pd.RotationRate)
-				sb.WriteString("\n    	" + pdDetail)
+				pdDetail := fmt.Sprintf("%s %s %s %s %s", pd.Vendor, pd.Capacity, pd.FormFactor, pd.Interface, pd.RotationRate)
+				pdMap[pdDetail]++
+			}
+			for k, v := range pdMap {
+				sb.WriteString(printSeparator(k, fmt.Sprintf(" * %d", v), false, 3))
+			}
+		}
+
+		for _, pd := range ctr.PhysicalDrives {
+			if pd.State == "Onln" || pd.State == "OK" {
+				continue
+			}
+			pdDetail := fmt.Sprintf("%s %s %s %s %s", pd.Vendor, pd.Capacity, pd.FormFactor, pd.Interface, pd.RotationRate)
+			if pd.State == "JBOD" {
+				otherPDs.jbod[pdDetail]++
+			} else if pd.State == "UGood" {
+				otherPDs.ugood[pdDetail]++
+			} else {
+				otherPDs.other[pdDetail]++
 			}
 		}
 	}
+
+	if len(otherPDs.jbod) > 0 {
+		sb.WriteString("\n        JBOD Drives:\n")
+		for k, v := range otherPDs.jbod {
+			sb.WriteString(fmt.Sprintf("	%s * %d\n", k, v))
+		}
+	}
+
+	if len(otherPDs.ugood) > 0 {
+		sb.WriteString("\n        UGood Drives:\n")
+		for k, v := range otherPDs.ugood {
+			sb.WriteString(fmt.Sprintf("	%s * %d\n", k, v))
+		}
+	}
+
+	if len(otherPDs.other) > 0 {
+		sb.WriteString("\n        Other Drives:\n")
+		for k, v := range otherPDs.other {
+			sb.WriteString(fmt.Sprintf("%s * %d\n", k, v))
+		}
+	}
+
 	println(sb.String())
 }
 
@@ -129,4 +193,16 @@ func extractMainDevice(device string) string {
 	}
 
 	return "/dev/" + name
+}
+
+func (r *RAID) estimatePrintSize() int {
+	baseSize := 100
+	ctrlCount := len(r.Controllers.Controller)
+
+	estimateSize := baseSize + (ctrlCount * 100)
+	for _, ctrl := range r.Controllers.Controller {
+		estimateSize += len(ctrl.LogicalDrives) * 50
+	}
+
+	return estimateSize
 }

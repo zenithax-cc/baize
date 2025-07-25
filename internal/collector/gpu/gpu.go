@@ -2,7 +2,6 @@ package gpu
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -38,6 +37,8 @@ var (
 	onBoardMap    = map[string]bool{
 		"102b:0522": true,
 		"102b:0533": true,
+		"102b:0534": true,
+		"102b:0536": true,
 		"102b:0538": true,
 		"19e5:1711": true,
 		"1a03:2000": true,
@@ -67,29 +68,6 @@ func (g *GPU) Collect() error {
 	}
 
 	return nil
-}
-
-func (g *GPU) BriefString() {
-	fields := []string{"Device", "Vendor", "PCIeID"}
-	println("[GPU INFO]")
-	for _, card := range g.GraphicsCards {
-		sb := utils.SelectFields(card.PCIe, fields, 1)
-		fmt.Fprintf(sb, "%s%-*s: %v\n", "    ", 36, "IsOnBoard", card.IsOnBoard)
-		fmt.Println(sb.String())
-	}
-}
-
-func (g *GPU) ToJson() {
-	js, err := json.MarshalIndent(g, "", "    ")
-	if err != nil {
-		fmt.Printf("Failed to marshal GPU information to JSON: %v", err)
-		return
-	}
-	fmt.Println(string(js))
-}
-
-func (g *GPU) DetailString() {
-
 }
 
 func fromDrm(ctx context.Context, g *GPU) error {

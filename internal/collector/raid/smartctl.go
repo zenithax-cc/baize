@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/zenithax-cc/baize/common/utils"
@@ -208,6 +211,8 @@ func (b *BaseSmartInfo) populate(res *physicalDrive) error {
 	res.Temperature = strconv.Itoa(b.Temperature.Current)
 	res.PowerOnTime = strconv.Itoa(b.PowerOnTime.Hours)
 
+	res.Vendor, res.Product = getVendorAndModel(b.ModelName)
+
 	if b.FormFactor.Name != "" {
 		res.FormFactor = b.FormFactor.Name
 	}
@@ -278,4 +283,58 @@ func findBlockDevice() string {
 	})
 
 	return blockDevice
+}
+
+type disk struct {
+	Manufacturer []map[string]string `json:"manufacturer"`
+	Product      []map[string]string `json:"product"`
+}
+
+type dev struct {
+	Disk disk `json:"disk"`
+}
+
+func getVendorAndModel(m string) (string, string) {
+	retVendor, retProduct := "Unkown", "Unkown"
+	strReplace := []string{"IBM-ESXS", "HP", "LENOVO-X", "ATA",
+		"-", "_", "SAMSUNG", "INTEL", "SEAGATE", "TOSHIBA", "HGST",
+		"Micron", "KIOXIA"}
+	for _, i := range strReplace {
+		m = strings.ReplaceAll(strings.TrimSpace(m), i, " ")
+	}
+
+	js, err := os.Open("/usr/local/beidou/config/devmap.json")
+	if err != nil {
+		return retVendor, retProduct
+	}
+	defer js.Close()
+
+	dev := dev{}
+	if err := json.NewDecoder(js).Decode(&dev); err != nil {
+		return retVendor, retProduct
+	}
+
+	sl := strings.Split(m, " ")
+	for _, value := range dev.Disk.Manufacturer {
+		reg := regexp.MustCompile(value["regular"])
+		if reg.MatchString(sl[len(sl)-1]) {
+			retVendor = value["stdName"]
+			break
+		}
+	}
+
+	for _, value := range dev.Disk.Product {
+
+		if !strings.HasPrefix(value["stdName"], retVendor) {
+			continue
+		}
+
+		reg := regexp.MustCompile(value["regular"])
+		if reg.MatchString(sl[len(sl)-1]) {
+			retProduct = value["stdName"]
+			break
+		}
+	}
+
+	return retVendor, retProduct
 }

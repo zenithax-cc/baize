@@ -1,9 +1,8 @@
 package pkg
 
 import (
-	"fmt"
+	"strings"
 
-	"github.com/zenithax-cc/baize/common/utils"
 	"github.com/zenithax-cc/baize/internal/collector/health"
 )
 
@@ -22,15 +21,18 @@ func (h *Health) PrintJson() {
 }
 
 func (h *Health) PrintBrief() {
-	println("[HEALTH INFO]")
+	var sb strings.Builder
+	sb.Grow(1000)
+	sb.WriteString("[HEALTH INFO]\n")
+
 	fields := []string{"GameInit", "Puppet", "Gpostd", "SSHPort"}
-	sb := utils.SelectFields(h, fields, 1)
-	fmt.Fprintf(sb, "%s%-*s: %v\n", "    ", 36, "HWhealth", h.HWhealth.State)
-	if h.HWhealth.State == "error" {
-		fmt.Fprintf(sb, "%s%-*s: %v\n", "    	", 32, "HWhealthErrors", h.HWhealth.Errors)
-		fmt.Fprintf(sb, "%s%-*s: %v\n", "    	", 32, "HWhealthErrorDetail", h.HWhealth.ErrDetail)
-	}
-	fmt.Println(sb.String())
+	hwFields := []string{"State", "Errors", "ErrDetail"}
+
+	sb.WriteString(selectFields(h.Health, fields, 1, colorMap["Health"]).String() + "\n")
+	sb.WriteString(printSeparator("HWhealth", "", true, 1))
+	sb.WriteString(selectFields(h.HWhealth, hwFields, 2, colorMap["Health"]).String() + "\n")
+
+	println(sb.String())
 }
 
 func (h *Health) PrintDetail() {}

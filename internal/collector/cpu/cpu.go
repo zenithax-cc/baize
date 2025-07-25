@@ -86,7 +86,7 @@ func New() *CPU {
 	return &CPU{
 		LscpuInfo: LscpuInfo{
 			PowerState:     "Performance",
-			HyperThreading: "Surpported Enabled",
+			HyperThreading: "Supported Enabled",
 			Diagnose:       "Healthy",
 			Flags:          make([]string, 0, 16),
 		},
@@ -246,7 +246,7 @@ func (c *CPU) smbiosCPU(ctx context.Context) error {
 	c.MinimumFrequency = fmt.Sprintf("%d MHz", threadInfo.minFreq)
 	c.Temperature = threadInfo.temperature
 	c.Wattage = threadInfo.wattage
-	if threadInfo.minFreq < threadInfo.basedFreq {
+	if threadInfo.minFreq < threadInfo.basedFreq+50 {
 		c.PowerState = "PowerSave"
 	}
 

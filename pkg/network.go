@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/zenithax-cc/baize/internal/collector/network"
 )
@@ -21,15 +22,27 @@ func (c *Network) PrintJson() {
 }
 
 func (c *Network) PrintBrief() {
-	println("[NETWORK INFO]")
+	var sb strings.Builder
+	sb.Grow(1000)
+	sb.WriteString("[NETWORK INFO]\n")
+
+	if c == nil || c.Network.PhysicalInterfaces == nil || len(c.Network.PhysicalInterfaces) == 0 {
+		sb.WriteString("	no physical network interface found\n")
+		println(sb.String())
+		return
+	}
+
 	nicMap := map[string]int{}
 	for _, iface := range c.Network.PhysicalInterfaces {
 		name := fmt.Sprintf("%s %s", iface.PCIe.Device, iface.Speed)
 		nicMap[name]++
 	}
+
 	for name, count := range nicMap {
-		fmt.Printf("%s%s * %d\n", "    ", name, count)
+		sb.WriteString(printSeparator(name, fmt.Sprintf("* %d", count), false, 1))
 	}
+
+	println(sb.String())
 }
 
 func (c *Network) PrintDetail() {}

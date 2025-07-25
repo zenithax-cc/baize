@@ -130,6 +130,10 @@ func (b *bondInterface) diagnose() {
 		if b.AggregatorID != slave.AggregatorID {
 			sb.WriteString("the aggregator id of slave interfaces is not the same; ")
 		}
+
+		if slave.Status == "down" {
+			sb.WriteString(slave.Name + " is down; ")
+		}
 	}
 
 	if sb.Len() > 0 {

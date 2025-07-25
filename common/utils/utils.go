@@ -83,7 +83,8 @@ func (r *RunShell) CommandContext(ctx context.Context, name string, args ...stri
 var (
 	unitIndexMap = map[string]int{"B": 0, "KB": 1, "MB": 2, "GB": 3, "TB": 4, "PB": 5, "EB": 6, "ZB": 7, "YB": 8}
 	decimalUnit  = []string{"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"}
-	binaryUnit   = []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"}
+
+// binaryUnit   = []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"}
 )
 
 // ConvertUnit 转换单位
@@ -98,11 +99,13 @@ func ConvertUnit(f float64, u string, isBinary bool) (string, error) {
 	var unit []string
 	base := 1000
 	if isBinary {
-		unit = binaryUnit
+		//		unit = binaryUnit
 		base = 1024
-	} else {
-		unit = decimalUnit
 	}
+	unit = decimalUnit
+	//	} else {
+	//		unit = decimalUnit
+	//	}
 	for f >= float64(base) && index < len(unit)-1 {
 		f /= float64(base)
 		index++
@@ -196,34 +199,73 @@ func Cut(str, sep string) (string, string, bool) {
 
 // IsEmpty 判断结构体是否为空
 func IsEmpty(v any) bool {
+	visited := make(map[uintptr]bool)
+	return isEmptyWithVisited(v, visited)
+}
+
+func isEmptyWithVisited(v any, visited map[uintptr]bool) bool {
 	if v == nil {
 		return true
 	}
 
-	value := reflect.ValueOf(v)
-
-	if value.Kind() == reflect.Ptr {
-		if value.IsNil() {
-			return true
-		}
-		return IsEmpty(value.Elem().Interface())
+	switch v := v.(type) {
+	case string:
+		return v == ""
+	case int, int8, int16, int32, int64:
+		return v == 0
+	case uint, uint8, uint16, uint32, uint64:
+		return v == 0
+	case float32, float64:
+		return v == 0
+	case bool:
+		return !v
+	case []any:
+		return len(v) == 0
+	case map[any]any:
+		return len(v) == 0
 	}
 
-	if value.Kind() == reflect.Interface {
+	value := reflect.ValueOf(v)
+	for value.Kind() == reflect.Ptr || value.Kind() == reflect.Interface {
 		if value.IsNil() {
 			return true
 		}
-		return IsEmpty(value.Elem().Interface())
+
+		if value.Kind() == reflect.Ptr {
+			ptr := value.Pointer()
+			if visited[ptr] {
+				return false
+			}
+			visited[ptr] = true
+		}
+
+		value = value.Elem()
 	}
 
 	if value.Kind() != reflect.Struct {
 		return value.IsZero()
 	}
 
-	for i := 0; i < value.NumField(); i++ {
+	return isStructEmpty(value, visited)
+}
+
+func isStructEmpty(value reflect.Value, visited map[uintptr]bool) bool {
+	numField := value.NumField()
+	structType := value.Type()
+
+	for i := 0; i < numField; i++ {
 		field := value.Field(i)
+		fieldType := structType.Field(i)
+
+		if fieldType.Anonymous {
+			if !isEmptyWithVisited(field.Interface(), visited) {
+				return false
+			}
+			continue
+		}
+
 		if field.CanInterface() {
-			if !IsEmpty(field.Interface()) {
+			if !isEmptyWithVisited(field.Interface(), visited) {
 				return false
 			}
 		} else {
@@ -310,124 +352,4 @@ func CombineErrors(errs []error) error {
 	}
 
 	return fmt.Errorf("%s", sb.String())
-}
-
-type parseConfig struct {
-	fields     []string
-	fieldMap   map[string]bool
-	labelWidth int
-	maxDepth   int
-	maxItems   int
-	separator  string
-	indent     int
-}
-
-func SelectFields(v any, fields []string, indent int) *strings.Builder {
-	var sb strings.Builder
-
-	fieldMap := make(map[string]bool, len(fields))
-	for _, field := range fields {
-		fieldMap[field] = true
-	}
-
-	config := parseConfig{
-		fields:     fields,
-		fieldMap:   fieldMap,
-		labelWidth: max(10, 40-indent*4),
-		maxDepth:   10,
-		maxItems:   50,
-		separator:  strings.Repeat("    ", indent),
-		indent:     indent,
-	}
-
-	parseStruct(v, &sb, &config)
-	return &sb
-}
-
-func parseStruct(v any, sb *strings.Builder, config *parseConfig) {
-	if config.maxDepth <= 0 {
-		sb.WriteString(config.separator + "...(max depth reached)\n")
-		return
-	}
-
-	if v == nil {
-		sb.WriteString(config.separator + "<nil>\n")
-		return
-	}
-
-	val := reflect.ValueOf(v)
-	typ := reflect.TypeOf(v)
-
-	if val.Kind() == reflect.Ptr {
-		if val.IsNil() {
-			sb.WriteString(config.separator + "<nil>\n")
-			return
-		}
-		val = val.Elem()
-		typ = typ.Elem()
-	}
-
-	if val.Kind() != reflect.Struct {
-		return
-	}
-
-	nextConfig := parseConfig{
-		fields:     config.fields,
-		fieldMap:   config.fieldMap,
-		labelWidth: max(10, config.labelWidth-4),
-		maxDepth:   config.maxDepth - 1,
-		maxItems:   config.maxItems,
-		separator:  config.separator + "    ",
-		indent:     config.indent + 1,
-	}
-
-	for _, fieldName := range config.fields {
-		fieldVal := val.FieldByName(fieldName)
-		if !fieldVal.IsValid() {
-			continue
-		}
-
-		fieldType, ok := typ.FieldByName(fieldName)
-		if !ok || !fieldType.IsExported() {
-			continue
-		}
-
-		if IsEmpty(fieldVal.Interface()) {
-			continue
-		}
-		switch fieldVal.Kind() {
-		case reflect.Struct:
-			parseStruct(fieldVal.Interface(), sb, &nextConfig)
-		case reflect.Pointer:
-			if !fieldVal.IsNil() {
-				parseStruct(fieldVal.Interface(), sb, &nextConfig)
-			}
-		case reflect.Slice, reflect.Array:
-			sliceLen := fieldVal.Len()
-
-			if sliceLen == 0 {
-				continue
-			}
-
-			itemsToShow := min(sliceLen, config.maxItems)
-
-			for i := 0; i < itemsToShow; i++ {
-				elem := fieldVal.Index(i)
-				elemType := elem.Kind()
-				sb.WriteString("\n")
-				switch elemType {
-				case reflect.Struct:
-					parseStruct(elem.Interface(), sb, &nextConfig)
-				case reflect.Pointer:
-					if !elem.IsNil() && elem.Elem().Kind() == reflect.Struct {
-						parseStruct(elem.Interface(), sb, &nextConfig)
-					}
-				default:
-					fmt.Fprintf(sb, "%s%-*s: %v\n", config.separator, config.labelWidth, fieldName, elem.Interface())
-				}
-			}
-		default:
-			fmt.Fprintf(sb, "%s%-*s: %v\n", config.separator, config.labelWidth, fieldName, fieldVal.Interface())
-		}
-	}
 }

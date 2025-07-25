@@ -30,10 +30,11 @@ type memoryInfo struct {
 	HPageSize    string `json:"huge_page_size,omitempty"`
 	HugeTlb      string `json:"huge_tlb,omitempty"`
 
-	MaximumSlots   string `json:"maximum_slot,omitempty"`
-	UsedSlots      string `json:"used_slots,omitempty"`
-	Diagnose       string `json:"diagnose,omitempty"`
-	DiagnoseDetail string `json:"diagnose_detail,omitempty"`
+	PhysicalMemoryTotal string `json:"physical_memory_total,omitempty"`
+	MaximumSlots        string `json:"maximum_slot,omitempty"`
+	UsedSlots           string `json:"used_slots,omitempty"`
+	Diagnose            string `json:"diagnose,omitempty"`
+	DiagnoseDetail      string `json:"diagnose_detail,omitempty"`
 }
 
 type smbiosMemory struct {
@@ -218,6 +219,12 @@ func (m *Memory) parseSmbiosMemory() error {
 		}
 	}
 
+	var (
+		totalSize int
+		unit      string
+		errs      []error
+	)
+
 	for _, mem := range memList {
 
 		if speedStr(mem.Speed) == "Unknown" {
@@ -244,12 +251,24 @@ func (m *Memory) parseSmbiosMemory() error {
 		}
 
 		m.PhysicalMemoryEntries = append(m.PhysicalMemoryEntries, entry)
+
+		fields := strings.Fields(entry.Size)
+		if len(fields) == 2 {
+			size, err := strconv.Atoi(fields[0])
+			if err != nil {
+				errs = append(errs, fmt.Errorf("parse memory %s size failed: %w", entry.BankLocator, err))
+				continue
+			}
+			totalSize += size
+			unit = fields[1]
+		}
 	}
 
 	m.UsedSlots = strconv.Itoa(len(m.PhysicalMemoryEntries))
 	m.MaximumSlots = strconv.Itoa(len(memList))
+	m.PhysicalMemoryTotal = fmt.Sprintf("%d %s", totalSize, unit)
 
-	return nil
+	return utils.CombineErrors(errs)
 }
 
 func (m *Memory) parseEdacMemory() error {
@@ -357,12 +376,27 @@ func parseDimmLabel(label string, dimm *edacMemory) {
 func (m *Memory) diagnose() {
 	var sb strings.Builder
 
+	// check if the amount of memory is even
 	if len(m.PhysicalMemoryEntries)%2 != 0 {
 		fmt.Fprintf(&sb, "the amount of memory should be an even number: %s;", m.UsedSlots)
 	}
 
+	// check if the amount of EDAC memory is the same as physical memory
 	if len(m.EdacMemoryEntries) != len(m.PhysicalMemoryEntries) {
 		fmt.Fprintf(&sb, "the amount of EDAC memory should be the same as physical memory: %d vs %d;", len(m.EdacMemoryEntries), len(m.PhysicalMemoryEntries))
+	}
+
+	// check if the amount of memory is greater than system memory
+	sysMem := strings.Fields(m.MemTotal)
+	phyMem := strings.Fields(m.PhysicalMemoryTotal)
+	if len(sysMem) == 2 && len(phyMem) == 2 {
+		sysMemSize, err1 := strconv.ParseFloat(sysMem[0], 64)
+		phyMemSize, err2 := strconv.ParseFloat(phyMem[0], 64)
+		if err1 != nil || err2 != nil {
+			fmt.Fprintf(&sb, "convertion memory size failed: %s vs %s;", m.MemTotal, m.PhysicalMemoryTotal)
+		} else if phyMemSize-sysMemSize > 16 {
+			fmt.Fprintf(&sb, "physical memory is greater than system memory: %s vs %s;", m.MemTotal, m.PhysicalMemoryTotal)
+		}
 	}
 
 	if sb.Len() > 0 {

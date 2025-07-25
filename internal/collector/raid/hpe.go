@@ -17,6 +17,7 @@ var (
 	hpePDRegex        = regexp.MustCompile(`physicaldrive (\d+I:\d+:\d+) \(port.*?\)`)
 	hpeLDRegex        = regexp.MustCompile(`logicaldrive (\d+) \(.*?\)`)
 	hpeBackplaneRegex = regexp.MustCompile(`Internal Drive Cage at Port (\d+I), Box (\d+), ([A-Za-z]+)`)
+	failedPD          = 0
 )
 
 func fromHpssacli(ctrNum int, c *controller) error {
@@ -33,7 +34,7 @@ func fromHpssacli(ctrNum int, c *controller) error {
 }
 
 func (hc *hpeController) checkController(ctrNum int) error {
-	for i := 0; i < ctrNum; i++ {
+	for i := 0; i <= ctrNum; i++ {
 		output, err := utils.Run.Command("bash", "-c", fmt.Sprintf("%s ctrl slot=%d show | grep -i %s", hpssacli, i, hc.PCIe.PCIeAddr))
 		if err == nil && len(output) > 0 {
 			hc.ID = strconv.Itoa(i)
@@ -179,9 +180,15 @@ func (hc *hpeController) parsePhysicalDrive(slot string) error {
 		errs = append(errs, fmt.Errorf("error scanning physical drive: %w", err))
 	}
 
-	if pd.State != "Failed" {
-		if err := pd.getSmartctlData("hpe", "", pd.DeviceId); err != nil {
-			errs = append(errs, err)
+	println(pd.Location)
+
+	if pd.State == "Failed" {
+		failedPD++
+	} else {
+		if did, err := strconv.Atoi(pd.DeviceId); err == nil {
+			if err := pd.getSmartctlData("hpe", "", fmt.Sprintf("%d", did-failedPD)); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 
@@ -217,6 +224,7 @@ func (hc *hpeController) parseLogicalDrive(slot string) error {
 	}
 
 	scanner := bufio.NewScanner(bytes.NewReader(output))
+	var array string
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "physicaldrive") {
@@ -228,13 +236,29 @@ func (hc *hpeController) parseLogicalDrive(slot string) error {
 			pdMapMutex.Unlock()
 			continue
 		}
+
+		if strings.HasPrefix(line, "Array") {
+			array = line
+			continue
+		}
+
 		key, value, find := utils.Cut(line, ":")
 		if !find {
 			continue
 		}
 
 		if ptr, exists := fieldMap[key]; exists {
-			*ptr = value
+			if key == "Fault Tolerance" {
+				*ptr = "RAID" + value
+			} else {
+				*ptr = value
+			}
+		}
+	}
+
+	if len(ld.PhysicalDrives) == 0 {
+		if err := parseArrayPD(ld, hc.ID, array); err != nil {
+			errs = append(errs, err)
 		}
 	}
 
@@ -243,6 +267,33 @@ func (hc *hpeController) parseLogicalDrive(slot string) error {
 	}
 
 	hc.LogicalDrives = append(hc.LogicalDrives, ld)
+
+	return utils.CombineErrors(errs)
+}
+
+func parseArrayPD(ld *logicalDrive, id, array string) error {
+	output, err := utils.Run.Command(hpssacli, "ctrl", fmt.Sprintf("slot=%s", id), array, "pd", "all", "show")
+	if err != nil {
+		return fmt.Errorf("hpssacli ld %s failed: %w", array, err)
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	var errs []error
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "physicaldrive") {
+			ll := strings.Fields(line)
+			pdMapMutex.Lock()
+			if pd, ok := pdMap[ll[1]]; ok {
+				ld.PhysicalDrives = append(ld.PhysicalDrives, pd)
+			}
+			pdMapMutex.Unlock()
+			continue
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		errs = append(errs, fmt.Errorf("error scanning logical drive: %w", err))
+	}
 
 	return utils.CombineErrors(errs)
 }

@@ -1,10 +1,8 @@
 package pkg
 
 import (
-	"fmt"
 	"strings"
 
-	"github.com/zenithax-cc/baize/common/utils"
 	"github.com/zenithax-cc/baize/internal/collector/network"
 )
 
@@ -23,18 +21,22 @@ func (c *Bond) PrintJson() {
 }
 
 func (c *Bond) PrintBrief() {
-	println("[BOND INFO]")
-	if len(c.Network.BondInterfaces) == 0 {
+	var sb strings.Builder
+	sb.Grow(1000)
+	sb.WriteString("[BOND INFO]\n")
+
+	if c == nil || c.Network.BondInterfaces == nil || len(c.Network.BondInterfaces) == 0 {
+		sb.WriteString("	no bond interface found\n")
+		println(sb.String())
 		return
 	}
+
 	fields := []string{"Name", "Status", "Speed", "AggregatorID", "Diagnose", "DiagnoseDetail", "SlaveInterfaces"}
-	var sb strings.Builder
 	for _, iface := range c.Network.BondInterfaces {
-		sb.WriteString(
-			utils.SelectFields(iface, fields, 1).String() + "\n")
+		sb.WriteString(selectFields(iface, fields, 1, colorMap["Bond"]).String() + "\n")
 	}
 
-	fmt.Println(sb.String())
+	println(sb.String())
 }
 
 func (c *Bond) PrintDetail() {}
