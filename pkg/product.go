@@ -16,7 +16,7 @@ func NewProduct() *Product {
 	}
 }
 
-func (p *Product) PrintJson() {
+func (p *Product) PrintJSON() {
 	printJson("Product", p.Product)
 }
 
@@ -37,3 +37,7 @@ func (p *Product) PrintBrief() {
 }
 
 func (p *Product) PrintDetail() {}
+
+func (p *Product) Name() string {
+	return "Product"
+}

@@ -16,7 +16,7 @@ func NewBond() *Bond {
 	}
 }
 
-func (c *Bond) PrintJson() {
+func (c *Bond) PrintJSON() {
 	printJson("Bond", c.Network.BondInterfaces)
 }
 
@@ -40,3 +40,7 @@ func (c *Bond) PrintBrief() {
 }
 
 func (c *Bond) PrintDetail() {}
+
+func (c *Bond) Name() string {
+	return "Bond"
+}

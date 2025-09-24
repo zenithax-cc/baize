@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"context"
 	"strings"
 
 	"github.com/zenithax-cc/baize/internal/collector/cpu"
@@ -16,11 +17,11 @@ func NewCPU() *CPU {
 	}
 }
 
-func (c *CPU) Collect() error {
-	return c.CPU.Collect()
+func (c *CPU) Collect(ctx context.Context) error {
+	return c.CPU.Collect(ctx)
 }
 
-func (c *CPU) PrintJson() {
+func (c *CPU) PrintJSON() {
 	printJson("CPU", c.CPU)
 }
 
@@ -45,3 +46,7 @@ func (c *CPU) PrintBrief() {
 }
 
 func (c *CPU) PrintDetail() {}
+
+func (c *CPU) Name() string {
+	return "CPU"
+}

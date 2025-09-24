@@ -151,18 +151,18 @@ func parseBondSlave(net string, res *physicalInterface) error {
 		"mii_status":         &res.State,
 	}
 
-	var errs []error
+	var mutilErr utils.MultiError
 
 	for k, ptr := range fieldMap {
 		inf, err := utils.ReadOneLineFile(filepath.Join(net, k))
 		if err != nil {
-			errs = append(errs, err)
+			mutilErr.Add(err)
 			continue
 		}
 		*ptr = inf
 	}
 
-	return utils.CombineErrors(errs)
+	return &mutilErr
 }
 
 func getLLDP(port string) (lldp, error) {

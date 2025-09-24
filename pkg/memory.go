@@ -17,7 +17,7 @@ func NewMemory() *Memory {
 	}
 }
 
-func (m *Memory) PrintJson() {
+func (m *Memory) PrintJSON() {
 	printJson("Memory", m.Memory)
 }
 
@@ -50,3 +50,7 @@ func (m *Memory) PrintBrief() {
 }
 
 func (m *Memory) PrintDetail() {}
+
+func (m *Memory) Name() string {
+	return "Memory"
+}

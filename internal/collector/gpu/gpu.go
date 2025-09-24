@@ -51,9 +51,7 @@ func New() *GPU {
 	}
 }
 
-func (g *GPU) Collect() error {
-	ctx, cancel := context.WithTimeout(context.Background(), collectTimeout)
-	defer cancel()
+func (g *GPU) Collect(ctx context.Context) error {
 
 	if err := fromDrm(ctx, g); err == nil {
 		return nil

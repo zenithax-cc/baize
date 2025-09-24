@@ -1,259 +1,273 @@
 package product
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/zenithax-cc/baize/common/utils"
 	"github.com/zenithax-cc/baize/internal/collector/smbios"
 )
 
-type OS struct {
-	KernelName    string `json:"kernel_name,omitempty"`
-	KernelRelease string `json:"kernel_release,omitempty"`
-	KernelVersion string `json:"kernel_version,omitempty"`
-	HostName      string `json:"host_name,omitempty"`
-	PrettyName    string `json:"pretty_name,omitempty"`
-	Releases      string `json:"releases,omitempty"`
-	DistrVersion  string `json:"distr_version,omitempty"`
-	MinorVersion  string `json:"minor_version,omitempty"`
-	IDLike        string `json:"id_like,omitempty"`
-	CodeName      string `json:"code_name,omitempty"`
-	Distr         string `json:"distr,omitempty"`
-}
-
-type BIOS struct {
-	Vendor           string `json:"vendor,omitempty"`
-	Version          string `json:"version,omitempty"`
-	ReleaseDate      string `json:"release_date,omitempty"`
-	ROMSize          string `json:"rom_size,omitempty"`
-	BIOSRevision     string `json:"bios_revision,omitempty"`
-	FirmwareRevision string `json:"firmware_revision,omitempty"`
-}
-
-type System struct {
-	Manufacturer string `json:"manufacturer,omitempty"`
-	ProductName  string `json:"product_name,omitempty"`
-	Version      string `json:"version,omitempty"`
-	SerialNumber string `json:"serial_number,omitempty"`
-	UUID         string `json:"uuid,omitempty"`
-	WakeupType   string `json:"wake-up_type,omitempty"`
-	Family       string `json:"family,omitempty"`
-}
-
-type BaseBoard struct {
-	Manufacturer string `json:"manufacturer,omitempty"`
-	ProductName  string `json:"product_name,omitempty"`
-	Version      string `json:"version,omitempty"`
-	SerialNumber string `json:"serial_number,omitempty"`
-	Type         string `json:"type,omitempty"`
-}
-
-type Chassis struct {
-	Manufacturer     string `json:"manufacturer,omitempty"`
-	Type             string `json:"type,omitempty"`
-	SN               string `json:"sn,omitempty"`
-	AssetTag         string `json:"asset_tag,omitempty"`
-	BootupState      string `json:"bootup_state,omitempty"`
-	PowerSupplyState string `json:"power_supply_state,omitempty"`
-	ThermalState     string `json:"thermal_state,omitempty"`
-	SecurityStatus   string `json:"security_status,omitempty"`
-	Height           string `json:"height,omitempty"`
-	NumberOfPower    string `json:"number_of_power_cards,omitempty"`
-	SKU              string `json:"sku_number,omitempty"`
-}
-
-type Product struct {
-	OS        `json:"os,omitempty"`
-	BIOS      `json:"bios,omitempty"`
-	System    `json:"system,omitempty"`
-	BaseBoard `json:"base_board,omitempty"`
-	Chassis   `json:"chassis,omitempty"`
-}
-
 const (
-	hostName      = "/proc/sys/kernel/hostname"
-	ostype        = "/proc/sys/kernel/ostype"
-	kernelRelease = "/proc/sys/kernel/osrelease"
-	kernelVersion = "/proc/sys/kernel/version"
-	osRelease     = "/etc/os-release"
-	centosRelease = "/etc/centos-release"
-	redhatRelease = "/etc/redhat-release"
-	rockyRelease  = "/etc/rocky-release"
+	hostNamePath      = "/proc/sys/kernel/hostname"
+	ostypePath        = "/proc/sys/kernel/ostype"
+	kernelReleasePath = "/proc/sys/kernel/osrelease"
+	kernelVersionPath = "/proc/sys/kernel/version"
+	osReleasePath     = "/etc/os-release"
+	centosReleasePath = "/etc/centos-release"
+	redhatReleasePath = "/etc/redhat-release"
+	rockyReleasePath  = "/etc/rocky-release"
+	debianVersionPath = "/etc/debian_version"
+
+	unknownValue = "Unknown"
+	naValue      = "N/A"
 )
 
+var (
+	regexOnce   sync.Once
+	regexUbuntu *regexp.Regexp
+	regexCentos *regexp.Regexp
+	regexRedhat *regexp.Regexp
+	regexRocky  *regexp.Regexp
+	regexDebian *regexp.Regexp
+
+	osReleaseFieldMap = map[string]func(*OS, string){
+		"PRETTY_NAME":      func(os *OS, value string) { os.PrettyName = value },
+		"NAME":             func(os *OS, value string) { os.Distr = value },
+		"VERSION_ID":       func(os *OS, value string) { os.DistrVersion = value },
+		"VERSION_CODENAME": func(os *OS, value string) { os.CodeName = value },
+		"ID_LIKE":          func(os *OS, value string) { os.IDLike = value },
+	}
+)
+
+type collectFunc func() error
+
+func initRegex() {
+	regexOnce.Do(func() {
+		regexUbuntu = regexp.MustCompile(`[\( ]([\d\.]+)`)
+		regexCentos = regexp.MustCompile(`^CentOS( Linux)? release ([\d\.]+)`)
+		regexRocky = regexp.MustCompile(`^Rocky Linux release ([\d\.]+)`)
+		regexRedhat = regexp.MustCompile(`[\( ]([\d\.]+)`)
+		regexDebian = regexp.MustCompile(`^([\d\.]+)`)
+	})
+}
+
 func New() *Product {
-	return &Product{
-		OS:        OS{},
-		BIOS:      BIOS{},
-		System:    System{},
-		BaseBoard: BaseBoard{},
-		Chassis:   Chassis{},
-	}
+	return &Product{}
 }
 
-func (p *Product) Collect() error {
+func (p *Product) Collect(ctx context.Context) error {
+	collects := []collectFunc{
+		p.collectKernel,
+		p.collectDistribution,
+		p.collectBIOS,
+		p.collectSystem,
+		p.collectBaseBoard,
+		p.CollectChassis,
+	}
+
+	return p.executeTasksConcurrently(ctx, collects)
+}
+
+func (p *Product) executeTasksConcurrently(ctx context.Context, tasks []collectFunc) error {
+	const maxWorkers = 3
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(tasks))
+	taskChan := make(chan collectFunc, len(tasks))
+
+	// 启动工作协程
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case task, ok := <-taskChan:
+					if !ok {
+						return
+					}
+					if err := task(); err != nil {
+						select {
+						case errChan <- err:
+						case <-ctx.Done():
+							return
+						}
+					}
+				}
+			}
+		}()
+	}
+
+	// 发送任务到通道
+	go func() {
+		defer close(taskChan)
+		for _, task := range tasks {
+			select {
+			case <-ctx.Done():
+				return
+			case taskChan <- task:
+			}
+		}
+	}()
+
+	// 等待所有任务完成
+	wg.Wait()
+	close(errChan)
+
 	var errs []error
-
-	if err := p.kernel(); err != nil {
-		errs = append(errs, err)
-	}
-
-	if err := p.distribution(); err != nil {
-		errs = append(errs, err)
-	}
-
-	if err := p.bios(); err != nil {
-		errs = append(errs, err)
-	}
-
-	if err := p.system(); err != nil {
-		errs = append(errs, err)
-	}
-
-	if err := p.baseBoard(); err != nil {
-		errs = append(errs, err)
-	}
-
-	if err := p.chassis(); err != nil {
-		errs = append(errs, err)
-	}
-
-	if len(errs) > 0 {
-		return utils.CombineErrors(errs)
-	}
-
-	return nil
-}
-
-func (p *Product) bios() error {
-	entries, err := smbios.GetTypeData[*smbios.Type0BIOS](smbios.SMBIOS, 0)
-	if entries == nil && err != nil {
-		return fmt.Errorf("no bios information found in SMBIOS : %v", err)
-	}
-
-	b := entries[0] // only one bios entry
-	p.BIOS = BIOS{
-		Vendor:           b.Vendor,
-		Version:          b.Version,
-		ReleaseDate:      b.ReleaseDate,
-		ROMSize:          b.GetROMSize(),
-		BIOSRevision:     fmt.Sprintf("%d.%d", b.BIOSMajorRelease, b.BIOSMinorRelease),
-		FirmwareRevision: fmt.Sprintf("%d.%d", b.ECMajorRelease, b.ECMinorRelease),
-	}
-
-	return nil
-}
-
-func (p *Product) system() error {
-	entries, err := smbios.GetTypeData[*smbios.Type1System](smbios.SMBIOS, 1)
-	if entries == nil {
-		return fmt.Errorf("no system information found in SMBIOS: %v", err)
-	}
-
-	s := entries[0] // only one system entry
-	p.System = System{
-		Manufacturer: s.Manufacturer,
-		ProductName:  s.ProductName,
-		Version:      s.Version,
-		SerialNumber: s.SerialNumber,
-		UUID:         s.UUID.String(),
-		WakeupType:   s.WakeUpType.String(),
-		Family:       s.Family,
-	}
-
-	return nil
-}
-
-func (p *Product) baseBoard() error {
-	entries, err := smbios.GetTypeData[*smbios.Type2BaseBoard](smbios.SMBIOS, 2)
-	if entries == nil {
-		return fmt.Errorf("no baseboard information found in SMBIOS : %v", err)
-	}
-
-	b := entries[0] // only one baseboard entry
-	p.BaseBoard = BaseBoard{
-		Manufacturer: b.Manufacturer,
-		ProductName:  b.Product,
-		Version:      b.Version,
-		SerialNumber: b.SerialNumber,
-		Type:         b.BoardType.String(),
-	}
-
-	return nil
-}
-
-func (p *Product) chassis() error {
-	entries, err := smbios.GetTypeData[*smbios.Type3Chassis](smbios.SMBIOS, 3)
-	if entries == nil {
-		return fmt.Errorf("no chassis information found in SMBIOS : %v", err)
-	}
-
-	cha := entries[0] // only one chassis entry
-	p.Chassis = Chassis{
-		Manufacturer:     cha.Manufacturer,
-		Type:             cha.ChassisType.String(),
-		SN:               cha.SerialNumber,
-		AssetTag:         cha.AssetTag,
-		BootupState:      cha.BootupState.String(),
-		PowerSupplyState: cha.PowerSupplyState.String(),
-		ThermalState:     cha.ThermalState.String(),
-		SecurityStatus:   cha.SecurityStatus.String(),
-		Height:           fmt.Sprintf("%d U", cha.Height),
-		NumberOfPower:    strconv.Itoa(int(cha.NumberOfPowerCords)),
-		SKU:              cha.SKU,
-	}
-	return nil
-}
-
-func (p *Product) kernel() error {
-	var errs []error
-	handler := func(path string) string {
-		content, err := utils.ReadOneLineFile(path)
-		if err != nil {
+	if len(errChan) > 0 {
+		errs = make([]error, 0, len(errChan))
+		for err := range errChan {
 			errs = append(errs, err)
-			return ""
 		}
-		return content
+		return errors.Join(errs...)
 	}
 
-	p.OS.HostName = handler(hostName)
-	p.OS.KernelName = handler(ostype)
-	p.OS.KernelRelease = handler(kernelRelease)
-	p.OS.KernelVersion = handler(kernelVersion)
+	return nil
+}
 
-	if len(errs) > 0 {
-		return utils.CombineErrors(errs)
+func (p *Product) collectBIOS() error {
+	entries, err := smbios.GetTypeData[*smbios.Type0BIOS](smbios.SMBIOS, 0)
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf("found %d BIOS information from SMBIO: %v", len(entries), err)
+	}
+
+	entry := entries[0]
+	p.BIOS = BIOS{
+		BaseInfo: BaseInfo{
+			Version: entry.Version,
+		},
+		Vendor:           entry.Vendor,
+		ReleaseDate:      entry.ReleaseDate,
+		ROMSize:          entry.GetROMSize(),
+		BIOSRevision:     formatRevision(entry.BIOSMajorRelease, entry.BIOSMinorRelease),
+		FirmwareRevision: formatRevision(entry.ECMajorRelease, entry.ECMinorRelease),
 	}
 	return nil
 }
 
-func (p *Product) distribution() error {
-	lines, err := utils.ReadLines(osRelease)
-	if err != nil {
-		return err
+func (p *Product) collectSystem() error {
+	entries, err := smbios.GetTypeData[*smbios.Type1System](smbios.SMBIOS, 1)
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf("found %d system information from SMBIO: %v", len(entries), err)
 	}
-	for _, line := range lines {
-		key, value, found := utils.Cut(line, "=")
-		if !found {
-			continue
+
+	entry := entries[0]
+	p.System = System{
+		BaseInfo: BaseInfo{
+			Manufacturer: entry.Manufacturer,
+			Version:      entry.Version,
+			SerialNumber: entry.SerialNumber,
+		},
+		ProductName: entry.ProductName,
+		UUID:        entry.UUID.String(),
+		WakeupType:  entry.WakeUpType.String(),
+		Family:      entry.Family,
+	}
+	return nil
+}
+
+func (p *Product) collectBaseBoard() error {
+	entries, err := smbios.GetTypeData[*smbios.Type2BaseBoard](smbios.SMBIOS, 2)
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf("found %d baseboard information from SMBIO: %v", len(entries), err)
+	}
+
+	entry := entries[0]
+	p.BaseBoard = BaseBoard{
+		BaseInfo: BaseInfo{
+			Manufacturer: entry.Manufacturer,
+			Version:      entry.Version,
+			SerialNumber: entry.SerialNumber,
+		},
+		ProductName: entry.Product,
+		Type:        entry.BoardType.String(),
+	}
+	return nil
+}
+
+func (p *Product) CollectChassis() error {
+	entries, err := smbios.GetTypeData[*smbios.Type3Chassis](smbios.SMBIOS, 3)
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf("found %d chassis information from SMBIO: %v", len(entries), err)
+	}
+
+	entry := entries[0]
+	p.Chassis = Chassis{
+		BaseInfo: BaseInfo{
+			Manufacturer: entry.Manufacturer,
+			SerialNumber: entry.SerialNumber,
+		},
+		Type:             entry.ChassisType.String(),
+		SN:               entry.SerialNumber,
+		AssetTag:         entry.AssetTag,
+		BootupState:      entry.BootupState.String(),
+		PowerSupplyState: entry.PowerSupplyState.String(),
+		ThermalState:     entry.ThermalState.String(),
+		SecurityStatus:   entry.SecurityStatus.String(),
+		Height:           formatHeight(entry.Height),
+		NumberOfPower:    strconv.Itoa(int(entry.NumberOfPowerCords)),
+		SKU:              entry.SKU,
+	}
+	return nil
+}
+
+func formatRevision(major, minor uint8) string {
+	return fmt.Sprintf("%d.%d", major, minor)
+}
+
+func formatHeight(height uint8) string {
+	if height == 0 {
+		return unknownValue
+	}
+	return fmt.Sprintf("%d U", height)
+}
+
+func (p *Product) collectKernel() error {
+	type kernekCfg struct {
+		path   string
+		target *string
+	}
+
+	kernelCfgs := []kernekCfg{
+		{path: ostypePath, target: &p.OS.KernelName},
+		{path: kernelReleasePath, target: &p.OS.KernelRelease},
+		{path: kernelVersionPath, target: &p.OS.KernelVersion},
+		{path: hostNamePath, target: &p.OS.HostName},
+	}
+
+	var multiErr utils.MultiError
+	for _, cfg := range kernelCfgs {
+		if content, err := utils.ReadOneLineFile(cfg.path); err != nil {
+			multiErr.Add(err)
+		} else {
+			*cfg.target = content
 		}
-		value = strings.Trim(value, "\"")
-		switch key {
-		case "PRETTY_NAME":
-			p.OS.PrettyName = value
-		case "NAME":
-			p.OS.Distr = value
-		case "VERSION_ID":
-			p.OS.DistrVersion = value
-		case "VERSION_CODENAME":
-			p.OS.CodeName = value
-		case "ID_LIKE":
-			p.OS.IDLike = value
-		default:
-			continue
+	}
+
+	return multiErr.Unwrap()
+}
+
+func (p *Product) collectDistribution() error {
+	lines, err := utils.ReadLines(osReleasePath)
+	if err != nil || len(lines) == 0 {
+		return fmt.Errorf("found %d information from os-release: %v", len(lines), err)
+	}
+
+	for _, line := range lines {
+		if key, value, found := utils.Cut(line, "="); found {
+			cleanValue := strings.Trim(value, "\"")
+			if fn, ok := osReleaseFieldMap[key]; ok {
+				fn(&p.OS, cleanValue)
+			}
 		}
 	}
 
@@ -263,42 +277,80 @@ func (p *Product) distribution() error {
 }
 
 func getMinorVersion(distr string) string {
-	res := "Unknown"
-	distr = strings.ToLower(distr)
+	lowerDistr := strings.ToLower(distr)
 
-	var (
-		reUbuntu = regexp.MustCompile(`[\( ]([\d\.]+)`)
-		reCentOS = regexp.MustCompile(`^CentOS( Linux)? release ([\d\.]+)`)
-		reRocky  = regexp.MustCompile(`^Rocky Linux release ([\d\.]+)`)
-		reRedHat = regexp.MustCompile(`[\( ]([\d\.]+)`)
-	)
+	var strategyMap = map[string]versionStrategy{
+		"debian": debianStrategy{},
+		"ubuntu": ubuntuStrategy{},
+		"centos": centosStrategy{},
+		"rhel":   rhelStrategy{},
+		"rocky":  rockyStrategy{},
+	}
 
-	switch {
-	case strings.HasPrefix(distr, "debian"):
-		res, _ = utils.ReadOneLineFile("/etc/debian_version")
-	case strings.HasPrefix(distr, "ubuntu"):
-		if m := reUbuntu.FindStringSubmatch(distr); m != nil {
-			res = m[1]
-		}
-	case strings.HasPrefix(distr, "centos"):
-		if data, err := utils.ReadOneLineFile("/etc/centos-release"); data != "" && err == nil {
-			if m := reCentOS.FindStringSubmatch(data); m != nil {
-				res = m[2]
-			}
-		}
-	case strings.HasPrefix(distr, "rhel"):
-		if data, err := utils.ReadOneLineFile("/etc/redhat-release"); data != "" && err == nil {
-			if m := reRedHat.FindStringSubmatch(data); m != nil {
-				res = m[1]
-			}
-		}
-	case strings.HasPrefix(distr, "rocky"):
-		if data, err := utils.ReadOneLineFile("/etc/rocky-release"); data != "" && err == nil {
-			if m := reRocky.FindStringSubmatch(data); m != nil {
-				res = m[1]
-			}
+	for distr, strategy := range strategyMap {
+		if strings.HasPrefix(lowerDistr, distr) {
+			return strategy.getMinorVersion(distr)
 		}
 	}
 
-	return res
+	return unknownValue
+}
+
+type versionStrategy interface {
+	getMinorVersion(distr string) string
+}
+
+type debianStrategy struct{}
+type ubuntuStrategy struct{}
+type centosStrategy struct{}
+type rhelStrategy struct{}
+type rockyStrategy struct{}
+
+func (s debianStrategy) getMinorVersion(distr string) string {
+	if content, err := utils.ReadOneLineFile(debianVersionPath); err == nil {
+		initRegex()
+		if match := regexDebian.FindStringSubmatch(content); len(match) > 1 {
+			return match[1]
+		}
+	}
+
+	return unknownValue
+}
+
+func (s ubuntuStrategy) getMinorVersion(distr string) string {
+	initRegex()
+	if matches := regexUbuntu.FindStringSubmatch(distr); len(matches) > 1 {
+		return matches[1]
+	}
+	return unknownValue
+}
+
+func (s centosStrategy) getMinorVersion(distr string) string {
+	if content, err := utils.ReadOneLineFile(centosReleasePath); err == nil {
+		initRegex()
+		if matches := regexCentos.FindStringSubmatch(content); len(matches) > 2 {
+			return matches[2]
+		}
+	}
+	return unknownValue
+}
+
+func (s rhelStrategy) getMinorVersion(distr string) string {
+	if content, err := utils.ReadOneLineFile(redhatReleasePath); err == nil {
+		initRegex()
+		if matches := regexRedhat.FindStringSubmatch(content); len(matches) > 1 {
+			return matches[1]
+		}
+	}
+	return unknownValue
+}
+
+func (s rockyStrategy) getMinorVersion(distr string) string {
+	if content, err := utils.ReadOneLineFile(rockyReleasePath); err == nil {
+		initRegex()
+		if matches := regexRocky.FindStringSubmatch(content); len(matches) > 1 {
+			return matches[1]
+		}
+	}
+	return unknownValue
 }

@@ -23,7 +23,7 @@ func NewRAID() *RAID {
 	}
 }
 
-func (r *RAID) PrintJson() {
+func (r *RAID) PrintJSON() {
 	printJson("RAID", r.Controllers)
 }
 
@@ -50,12 +50,14 @@ func (r *RAID) PrintBrief() {
 		jbod  map[string]int
 		ugood map[string]int
 		other map[string]int
+		nvme  map[string]int
 	}
 
 	otherPDs := otherPD{
 		jbod:  map[string]int{},
 		ugood: map[string]int{},
 		other: map[string]int{},
+		nvme:  map[string]int{},
 	}
 
 	for _, ctr := range r.Controllers.Controller {
@@ -88,6 +90,12 @@ func (r *RAID) PrintBrief() {
 		}
 	}
 
+	if len(r.Controllers.NVMe) > 0 {
+		for _, nvme := range r.Controllers.NVMe {
+			nvmeDetail := fmt.Sprintf("%s %s %s %s", nvme.Vendor, nvme.Capacity, nvme.Interface, nvme.RotationRate)
+			otherPDs.nvme[nvmeDetail]++
+		}
+	}
 	if len(otherPDs.jbod) > 0 {
 		sb.WriteString("\n        JBOD Drives:\n")
 		for k, v := range otherPDs.jbod {
@@ -109,10 +117,21 @@ func (r *RAID) PrintBrief() {
 		}
 	}
 
+	if len(otherPDs.nvme) > 0 {
+		sb.WriteString("\n        NVMe Drives:\n")
+		for k, v := range otherPDs.nvme {
+			sb.WriteString(fmt.Sprintf("	%s * %d\n", k, v))
+		}
+	}
+
 	println(sb.String())
 }
 
 func (r *RAID) PrintDetail() {}
+
+func (r *RAID) Name() string {
+	return "RAID"
+}
 
 func (r *RAID) getSystemDiskRAID() error {
 	systemDisk, err := findSystemDisk()

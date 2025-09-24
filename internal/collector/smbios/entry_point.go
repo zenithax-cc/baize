@@ -37,7 +37,7 @@ func parseEntryPoint(r io.Reader) (EntryPoint, error) {
 		data = make([]byte, anchor64Len)
 		eps = &entryPoint64{}
 	default:
-		return nil, fmt.Errorf("invalid anchor string")
+		return nil, fmt.Errorf("invalid anchor string:%v", string(peek[:]))
 	}
 
 	if _, err := io.ReadFull(bf, data); err != nil {

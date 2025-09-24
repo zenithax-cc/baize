@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -329,6 +331,48 @@ func Atoi(s string) int {
 		return -1
 	}
 	return i
+}
+
+type MultiError struct {
+	errors []error
+}
+
+func (m *MultiError) Add(err error) {
+	if err != nil {
+		m.errors = append(m.errors, err)
+	}
+}
+
+func (m *MultiError) Error() string {
+	if len(m.errors) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for i, err := range m.errors {
+		if i > 0 {
+			sb.WriteString("; ")
+		}
+		sb.WriteString(err.Error())
+	}
+	return sb.String()
+}
+
+func (m *MultiError) Unwrap() error {
+	if len(m.errors) == 0 {
+		return nil
+	}
+	return errors.Join(m.errors...)
+}
+
+func (m *MultiError) HasError() bool {
+	return len(m.errors) > 0
+}
+
+var StrBuilderPool = sync.Pool{
+	New: func() any {
+		return &strings.Builder{}
+	},
 }
 
 func CombineErrors(errs []error) error {

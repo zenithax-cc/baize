@@ -3,6 +3,7 @@ package raid
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -13,14 +14,18 @@ import (
 
 type arcController controller
 
-func fromArcconf(ctrNum int, c *controller) error {
+func adaptecHandle(ctx context.Context, ctrNum int, c *controller) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	vendor, err := utils.Run.Command("dmidecode", "-s", "system-manufacturer")
 	if err != nil {
 		return fmt.Errorf("adaptec dmidecode failed: %w", err)
 	}
 
 	if strings.ToLower(strings.TrimSpace(string(vendor))) == "hpe" {
-		return fromHpssacli(ctrNum, c)
+		return hpeHandle(ctx, ctrNum, c)
 	}
 
 	arcCtr := (*arcController)(c)

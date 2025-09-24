@@ -3,6 +3,7 @@ package raid
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -20,7 +21,11 @@ var (
 	failedPD          = 0
 )
 
-func fromHpssacli(ctrNum int, c *controller) error {
+func hpeHandle(ctx context.Context, ctrNum int, c *controller) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	hpeCtr := (*hpeController)(c)
 
 	if err := hpeCtr.checkController(ctrNum); err != nil {
@@ -179,8 +184,6 @@ func (hc *hpeController) parsePhysicalDrive(slot string) error {
 	if err := scanner.Err(); err != nil {
 		errs = append(errs, fmt.Errorf("error scanning physical drive: %w", err))
 	}
-
-	println(pd.Location)
 
 	if pd.State == "Failed" {
 		failedPD++

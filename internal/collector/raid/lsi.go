@@ -3,6 +3,7 @@ package raid
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -13,26 +14,63 @@ import (
 	"github.com/zenithax-cc/baize/common/utils"
 )
 
-type lsiController controller
-
-var lsiPDRegex = regexp.MustCompile(`^(\d+):(\d+)`)
-
-func fromStorcli(ctrNum int, c *controller) error {
-	lsiCtr := (*lsiController)(c)
-	if err := lsiCtr.checkController(ctrNum); err != nil {
-		return err
-	}
-
-	err := lsiCtr.getController()
-	*c = (controller)(*lsiCtr)
-
-	return err
+type lsiController struct {
+	*controller
 }
 
-func (lc *lsiController) checkController(ctrNum int) error {
+var (
+	lsiPDRegex = regexp.MustCompile(`^(\d+):(\d+)`)
+
+	scannerPool = sync.Pool{
+		New: func() any {
+			return bufio.NewScanner(bytes.NewReader(nil))
+		},
+	}
+)
+
+type LsiErr struct {
+	Operation string
+	Details   string
+	Err       error
+}
+
+func (e *LsiErr) Error() string {
+	return fmt.Sprintf("LSI %s failed: %s - %v", e.Operation, e.Details, e.Err)
+}
+
+func (e *LsiErr) Unwrap() error {
+	return e.Err
+}
+
+func lsiHandle(ctx context.Context, ctrNum int, c *controller) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	lsiCtr := &lsiController{controller: c}
+
+	if err := lsiCtr.findController(ctx, ctrNum); err != nil {
+		return &LsiErr{Operation: "find controller", Details: c.PCIe.PCIeID, Err: err}
+	}
+
+	if err := lsiCtr.loadControllerData(ctx); err != nil {
+		return &LsiErr{Operation: "load controller data", Details: c.PCIe.PCIeID, Err: err}
+	}
+
+	return nil
+}
+
+func (lc *lsiController) findController(ctx context.Context, ctrNum int) error {
+	pcieAddr := strings.TrimPrefix(lc.PCIe.PCIeAddr, "00")
+
+}
+
+func (lc *lsiController) findController(ctrNum int) error {
 	pcieAddr := strings.TrimPrefix(lc.PCIe.PCIeAddr, "00")
 	for i := 0; i < ctrNum; i++ {
-		output, err := utils.Run.Command("bash", "-c", fmt.Sprintf("%s /c%d show | grep %s", storcli, i, pcieAddr))
+		output, err := utils.Run.Command("bash", "-c", fmt.Sprintf("%s /c%d show | grep %s", storcliPath, i, pcieAddr))
 		if err == nil && len(output) > 0 {
 			lc.ID = strconv.Itoa(i)
 			return nil
@@ -41,12 +79,42 @@ func (lc *lsiController) checkController(ctrNum int) error {
 	return fmt.Errorf("not found LSI controller %s", lc.PCIe.PCIeAddr)
 }
 
-func (lc *lsiController) getController() error {
-	output, err := utils.Run.Command(storcli, "/c"+lc.ID, "show", "all", "J")
+func ctrCMD(cmd []string) ([]byte, error) {
+	output, err := utils.Run.Command(storcliPath, cmd...)
 	if err != nil {
-		return fmt.Errorf("storcli failed: %w", err)
+		return nil, fmt.Errorf("storcli failed: %w", err)
 	}
 
+	return output, nil
+}
+
+func (lc *lsiController) getController() error {
+	var (
+		output   []byte
+		mutilErr utils.MultiError
+		err      error
+	)
+
+	if lc.PCIe.SubClassID == "07" {
+		output, err = ctrCMD([]string{"/c" + lc.ID, "show", "J"})
+		if err != nil {
+			return err
+		}
+
+		mutilErr.Add(lc.unmarshalController(output))
+	}
+
+	output, err = ctrCMD([]string{"/c" + lc.ID, "show", "all", "J"})
+	if err != nil {
+		return err
+	}
+
+	mutilErr.Add(lc.unmarshalController(output))
+
+	return mutilErr.Unwrap()
+}
+
+func (lc *lsiController) unmarshalController(output []byte) error {
 	var lsiCtr StorcliRes
 	if err := json.Unmarshal(output, &lsiCtr); err != nil {
 		return fmt.Errorf("unmarshal lsi controller json error: %w", err)
@@ -60,7 +128,7 @@ func (lc *lsiController) getController() error {
 }
 
 func (lc *lsiController) parseController(data *ResponseData) error {
-	var errs []error
+	var multiErr utils.MultiError
 	lc.populateController(data)
 
 	if len(data.PDList) > 0 {
@@ -75,7 +143,6 @@ func (lc *lsiController) parseController(data *ResponseData) error {
 				drive, err := lc.parsePhysicalDrive(phyDrive)
 				if err != nil {
 					errChan <- err
-					return
 				}
 				pdChan <- drive
 			}(pd)
@@ -86,18 +153,18 @@ func (lc *lsiController) parseController(data *ResponseData) error {
 		close(errChan)
 
 		for err := range errChan {
-			errs = append(errs, err)
+			multiErr.Add(err)
 		}
 		for drive := range pdChan {
 			lc.PhysicalDrives = append(lc.PhysicalDrives, drive)
-			pdMap[drive.Location] = drive
+			pdc.Set(drive.DeviceId, drive)
 		}
 	}
 
 	if len(data.VDList) > 0 {
 		for _, vd := range data.VDList {
 			if err := lc.parseVirtualDrive(vd); err != nil {
-				errs = append(errs, err)
+				multiErr.Add(err)
 			}
 		}
 	}
@@ -105,7 +172,7 @@ func (lc *lsiController) parseController(data *ResponseData) error {
 	if len(data.EnclosureList) > 0 {
 		for _, enclosure := range data.EnclosureList {
 			if err := lc.parseBackplane(enclosure); err != nil {
-				errs = append(errs, err)
+				multiErr.Add(err)
 			}
 		}
 	}
@@ -123,7 +190,7 @@ func (lc *lsiController) parseController(data *ResponseData) error {
 			lc.Battery = append(lc.Battery, cachevault)
 		}
 	}
-	return utils.CombineErrors(errs)
+	return &multiErr
 }
 
 func (lc *lsiController) populateController(data *ResponseData) {

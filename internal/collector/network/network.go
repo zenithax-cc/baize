@@ -68,9 +68,7 @@ func New() *Network {
 	}
 }
 
-func (n *Network) Collect() error {
-	ctx, cancel := context.WithTimeout(context.Background(), collectTimeout)
-	defer cancel()
+func (n *Network) Collect(ctx context.Context) error {
 	var errs []error
 
 	if err := n.collectPhysicalInterfaces(ctx); err != nil {

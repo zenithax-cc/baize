@@ -16,7 +16,7 @@ func NewHealth() *Health {
 	}
 }
 
-func (h *Health) PrintJson() {
+func (h *Health) PrintJSON() {
 	printJson("Health", h.Health)
 }
 
@@ -36,3 +36,7 @@ func (h *Health) PrintBrief() {
 }
 
 func (h *Health) PrintDetail() {}
+
+func (h *Health) Name() string {
+	return "Health"
+}

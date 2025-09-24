@@ -16,7 +16,7 @@ func NewGPU() *GPU {
 	}
 }
 
-func (g GPU) PrintJson() {
+func (g GPU) PrintJSON() {
 	printJson("GPU", g.GPU)
 }
 
@@ -45,4 +45,8 @@ func (g GPU) PrintDetail() {
 		fmt.Fprintf(sb, "%s%-*s: %v\n", "    ", 36, "IsOnBoard", card.IsOnBoard)
 		fmt.Println(sb.String())
 	}
+}
+
+func (g GPU) Name() string {
+	return "GPU"
 }

@@ -33,7 +33,8 @@ type ResponseData struct {
 	PhysicalDrives int                `json:"Physical Drives"`
 	PDList         []*pdList          `json:"PD List"`
 	Enclosures     int                `json:"Enclosures"`
-	EnclosureList  []*enclosureList   `json:"Enclosure List"`
+	EnclosureList  []*enclosureList   `json:"Enclosure List,"`
+	EnclosureInfo  []*enclosureList   `json:"Enclosure Information"`
 	CachevaultInfo []*cacheVaultInfo  `json:"Cachevault_Info"`
 }
 

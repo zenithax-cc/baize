@@ -1,6 +1,7 @@
 package raid
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -25,7 +26,10 @@ var (
 	nvmeRegex = regexp.MustCompile(`n\d+$`)
 )
 
-func fromMdadm(ctrNum int, c *controller) error {
+func intelHandle(ctx context.Context, ctrNum int, c *controller) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	vrocCtr := &vrocControllerManager{
 		ctrMap: make(map[string]*controller, 2),

@@ -1,0 +1,19 @@
+package memory
+
+import "time"
+
+const (
+	edacPath           = "/sys/devices/system/edac/mc/"
+	meminfoPath        = "/proc/meminfo"
+	kbSuffix           = "kB"
+	defaultMemorySlots = 24
+	unknownValue       = "Unknown"
+	naValue            = "N/A"
+	diagnoseHealthy    = "Healthy"
+	diagnoseUnhealthy  = "Unhealthy"
+
+	// 预设缓冲区大小，减少内存分配
+	initialBufferSize = 512
+	maxConcurrency    = 3
+	collectTimeout    = 30 * time.Second
+)

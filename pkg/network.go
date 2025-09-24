@@ -17,7 +17,7 @@ func NewNetwork() *Network {
 	}
 }
 
-func (c *Network) PrintJson() {
+func (c *Network) PrintJSON() {
 	printJson("Network", c.Network)
 }
 
@@ -34,8 +34,7 @@ func (c *Network) PrintBrief() {
 
 	nicMap := map[string]int{}
 	for _, iface := range c.Network.PhysicalInterfaces {
-		name := fmt.Sprintf("%s %s", iface.PCIe.Device, iface.Speed)
-		nicMap[name]++
+		nicMap[iface.PCIe.Device]++
 	}
 
 	for name, count := range nicMap {
@@ -46,3 +45,7 @@ func (c *Network) PrintBrief() {
 }
 
 func (c *Network) PrintDetail() {}
+
+func (c *Network) Name() string {
+	return "Network"
+}

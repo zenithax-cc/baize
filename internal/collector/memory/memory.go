@@ -1,150 +1,127 @@
 package memory
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/zenithax-cc/baize/common/utils"
 	"github.com/zenithax-cc/baize/internal/collector/smbios"
 )
 
-type memoryInfo struct {
-	MemTotal     string `json:"memory_total,omitempty"`
-	MemAvailable string `json:"memory_available,omitempty"`
-	MemUsed      string `json:"memory_used,omitempty"`
-	SwapTotal    string `json:"swap_total,omitempty"`
-	SwapUsed     string `json:"swap_used,omitempty"`
-	Buffer       string `json:"buffer,omitempty"`
-	Cached       string `json:"cached,omitempty"`
-	Slab         string `json:"slab,omitempty"`
-	SReclaimable string `json:"s_reclaimable,omitempty"`
-	SUnreclaim   string `json:"s_unreclaim,omitempty"`
-	KReclaimable string `json:"k_reclaimable,omitempty"`
-	KernelStack  string `json:"kernel_stack,omitempty"`
-	PageTables   string `json:"page_tables,omitempty"`
-	Dirty        string `json:"dirty,omitempty"`
-	Writeback    string `json:"writeback,omitempty"`
-	HPagesTotal  string `json:"huge_page_total,omitempty"`
-	HPageSize    string `json:"huge_page_size,omitempty"`
-	HugeTlb      string `json:"huge_tlb,omitempty"`
-
-	PhysicalMemoryTotal string `json:"physical_memory_total,omitempty"`
-	MaximumSlots        string `json:"maximum_slot,omitempty"`
-	UsedSlots           string `json:"used_slots,omitempty"`
-	Diagnose            string `json:"diagnose,omitempty"`
-	DiagnoseDetail      string `json:"diagnose_detail,omitempty"`
-}
-
-type smbiosMemory struct {
-	TotalWidth        string `json:"total_width,omitempty"`
-	DataWidth         string `json:"data_width,omitempty"`
-	Size              string `json:"size,omitempty"`
-	FormFactor        string `json:"form_factor,omitempty"`
-	DeviceLocator     string `json:"device_locator,omitempty"`
-	BankLocator       string `json:"bank_locator,omitempty"`
-	Type              string `json:"type,omitempty"`
-	TypeDetail        string `json:"type_detail,omitempty"`
-	Speed             string `json:"speed,omitempty"`
-	Manufacturer      string `json:"manufacturer,omitempty"`
-	SerialNumber      string `json:"serial_number,omitempty"`
-	PartNumber        string `json:"part_number,omitempty"`
-	Rank              string `json:"rank,omitempty"`
-	ConfiguredSpeed   string `json:"configured_speed,omitempty"`
-	ConfiguredVoltage string `json:"configured_voltage,omitempty"`
-	Technology        string `json:"technology,omitempty"`
-}
-
-type edacMemory struct {
-	CorrectableErrors   string `json:"correctable_errors,omitempty"`
-	UncorrectableErrors string `json:"uncorrectable_errors,omitempty"`
-	DeviceType          string `json:"device_type,omitempty"`
-	EdacMode            string `json:"edac_mode,omitempty"`
-	MemoryLocation      string `json:"memory_location,omitempty"`
-	MemoryType          string `json:"memory_type,omitempty"`
-	SocketID            string `json:"socket_id,omitempty"`
-	MemoryControllerID  string `json:"memory_controller_id,omitempty"`
-	ChannelID           string `json:"channel_id,omitempty"`
-	DIMMID              string `json:"dimm_id,omitempty"`
-	Size                string `json:"size,omitempty"`
-}
-
-type Memory struct {
-	memoryInfo
-	PhysicalMemoryEntries []*smbiosMemory `json:"physical_memory_entries,omitempty"`
-	EdacMemoryEntries     []*edacMemory   `json:"edac_memory_entries,omitempty"`
-}
-
 const (
-	edacPath    = "/sys/devices/system/edac/mc/"
-	meminfoPath = "/proc/meminfo"
-	kbSuffix    = "kB"
+	edacPath           = "/sys/devices/system/edac/mc/"
+	meminfoPath        = "/proc/meminfo"
+	kbSuffix           = "kB"
+	defaultMemorySlots = 24
+	unknownValue       = "Unknown"
+	naValue            = "N/A"
+	diagnoseHealthy    = "Healthy"
+	diagnoseUnhealthy  = "Unhealthy"
 )
 
 func New() *Memory {
 	return &Memory{
-		memoryInfo: memoryInfo{
-			Diagnose: "Healthy",
+		MemoryInfo: MemoryInfo{
+			Diagnose: diagnoseHealthy,
 		},
-		PhysicalMemoryEntries: make([]*smbiosMemory, 0, 24),
-		EdacMemoryEntries:     make([]*edacMemory, 0, 24),
+		PhysicalMemoryEntries: make([]*SmbiosMemory, 0, defaultMemorySlots),
+		EdacMemoryEntries:     make([]*EdacMemory, 0, defaultMemorySlots),
 	}
 }
 
-func (m *Memory) Collect() error {
-	var errs []error
+func (me *Memory) Collect(ctx context.Context) error {
 
-	if err := m.readMeminfo(); err != nil {
-		errs = append(errs, err)
+	type collectTask struct {
+		name string
+		fn   func() error
 	}
 
-	if err := m.parseSmbiosMemory(); err != nil {
-		errs = append(errs, err)
+	tasks := []collectTask{{name: "meminfo", fn: me.readMeminfo},
+		{name: "smbiosMemory", fn: me.SmbiosMemory},
+		{name: "edacMemory", fn: me.EdacMemory},
 	}
 
-	if err := m.parseEdacMemory(); err != nil {
-		errs = append(errs, err)
+	type resultTask struct {
+		name string
+		err  error
+	}
+	resultChan := make(chan resultTask, len(tasks))
+	semaphore := make(chan struct{}, 3)
+	var wg sync.WaitGroup
+
+	for _, task := range tasks {
+		wg.Add(1)
+		go func(t collectTask) {
+			defer wg.Done()
+
+			select {
+			case <-ctx.Done():
+				resultChan <- resultTask{name: t.name, err: ctx.Err()}
+				return
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			}
+
+			err := t.fn()
+			resultChan <- resultTask{name: t.name, err: err}
+
+		}(task)
 	}
 
-	m.diagnose()
+	wg.Wait()
+	close(resultChan)
 
-	if len(errs) > 0 {
-		return utils.CombineErrors(errs)
+	var multiErr utils.MultiError
+	for res := range resultChan {
+		if res.err != nil {
+			multiErr.Add(fmt.Errorf("collect %s failed: %w", res.name, res.err))
+		}
 	}
-	return nil
+
+	me.diagnose()
+	return multiErr.Unwrap()
 }
 
-func (m *Memory) readMeminfo() error {
+func (me *Memory) readMeminfo() error {
 	lines, err := utils.ReadLines(meminfoPath)
 	if err != nil {
 		return err
 	}
 
-	fieldMapping := map[string]*string{
-		"MemTotal":        &m.MemTotal,
-		"MemAvailable":    &m.MemAvailable,
-		"SwapTotal":       &m.SwapTotal,
-		"Buffers":         &m.Buffer,
-		"Cached":          &m.Cached,
-		"Slab":            &m.Slab,
-		"SReclaimable":    &m.SReclaimable,
-		"SUnreclaim":      &m.SUnreclaim,
-		"KReclaimable":    &m.KReclaimable,
-		"KernelStack":     &m.KernelStack,
-		"PageTables":      &m.PageTables,
-		"Dirty":           &m.Dirty,
-		"Writeback":       &m.Writeback,
-		"HugePages_Total": &m.HPagesTotal,
-		"HugePagessize":   &m.HPageSize,
-		"Hugetlb":         &m.HugeTlb,
+	type fieldMapper struct {
+		memInfoFields map[string]*string
+		memValues     map[string]float64
 	}
 
-	memValue := map[string]float64{
-		"MemTotal":     -1,
-		"MemAvailable": -1,
-		"SwapTotal":    -1,
-		"SwapFree":     -1,
+	mappers := &fieldMapper{
+		memInfoFields: map[string]*string{
+			"MemTotal":        &me.MemTotal,
+			"MemAvailable":    &me.MemAvailable,
+			"SwapTotal":       &me.SwapTotal,
+			"Buffers":         &me.Buffer,
+			"Cached":          &me.Cached,
+			"Slab":            &me.Slab,
+			"SReclaimable":    &me.SReclaimable,
+			"SUnreclaim":      &me.SUnreclaim,
+			"KReclaimable":    &me.KReclaimable,
+			"KernelStack":     &me.KernelStack,
+			"PageTables":      &me.PageTables,
+			"Dirty":           &me.Dirty,
+			"Writeback":       &me.Writeback,
+			"HugePages_Total": &me.HPagesTotal,
+			"HugePagessize":   &me.HPageSize,
+			"Hugetlb":         &me.HugeTlb,
+		},
+		memValues: map[string]float64{
+			"MemTotal":     -1,
+			"MemAvailable": -1,
+			"SwapTotal":    -1,
+			"SwapFree":     -1,
+		},
 	}
 
 	for _, line := range lines {
@@ -152,46 +129,49 @@ func (m *Memory) readMeminfo() error {
 		if !ok {
 			continue
 		}
+
 		var valueFloat float64
 		if strings.HasSuffix(value, kbSuffix) {
-			trimmedValue := strings.TrimSpace(strings.TrimSuffix(value, kbSuffix))
+			trimmedValue := value[:len(value)-len(kbSuffix)]
+			trimmedValue = strings.TrimSpace(trimmedValue)
 			valueFloat, _ = strconv.ParseFloat(trimmedValue, 64)
 		}
-		if val, ok := memValue[key]; ok {
-			if val == -1 {
-				memValue[key] = valueFloat
-			}
+
+		if val, exists := mappers.memValues[key]; exists && val == -1 {
+			mappers.memValues[key] = valueFloat
 		}
-		if field, exists := fieldMapping[key]; exists {
-			val, err := utils.ConvertUnit(valueFloat, kbSuffix, true)
-			if err != nil {
-				val = "N/A"
-			}
+
+		if field, exists := mappers.memInfoFields[key]; exists {
+			val := convertUnitSafe(valueFloat, kbSuffix)
 			*field = val
 		}
 	}
 
-	m.MemUsed = calculateMemoryUsed(memValue["MemTotal"], memValue["MemAvailable"])
-	m.SwapUsed = calculateMemoryUsed(memValue["SwapTotal"], memValue["SwapFree"])
+	me.MemUsed = calculateUsed(mappers.memValues["MemTotal"], mappers.memValues["MemAvailable"])
+	me.SwapUsed = calculateUsed(mappers.memValues["SwapTotal"], mappers.memValues["SwapFree"])
+
 	return nil
 }
 
-func calculateMemoryUsed(total, available float64) string {
-	if total < 0 || available < 0 {
-		return "N/A"
+func convertUnitSafe(value float64, suffix string) string {
+	if val, err := utils.ConvertUnit(value, suffix, true); err == nil {
+		return val
 	}
-	used, err := utils.ConvertUnit(total-available, kbSuffix, true)
-	if err != nil {
-		return "N/A"
-	}
-	return used
+
+	return naValue
 }
 
-func (m *Memory) parseSmbiosMemory() error {
-	memList, err := smbios.GetTypeData[*smbios.Type17MemoryDevice](smbios.SMBIOS, 17)
+func calculateUsed(total, available float64) string {
+	if total < 0 || available < 0 {
+		return naValue
+	}
+	return convertUnitSafe(total-available, kbSuffix)
+}
 
-	if len(memList) == 0 {
-		return fmt.Errorf("no memory device found in SMBIOS : %v", err)
+func (me *Memory) SmbiosMemory() error {
+	memList, err := smbios.GetTypeData[*smbios.Type17MemoryDevice](smbios.SMBIOS, 17)
+	if err != nil || len(memList) == 0 {
+		return fmt.Errorf("memory device found in SMBIOS: %d,errors: %v", len(memList), err)
 	}
 
 	bitWidthStr := func(v uint16) string {
@@ -222,27 +202,31 @@ func (m *Memory) parseSmbiosMemory() error {
 	var (
 		totalSize int
 		unit      string
-		errs      []error
+		mutilErr  utils.MultiError
 	)
 
-	for _, mem := range memList {
+	validMemory := make([]*SmbiosMemory, 0, len(memList))
 
-		if speedStr(mem.Speed) == "Unknown" {
+	for _, mem := range memList {
+		speed := speedStr(mem.Speed)
+		if speed == unknownValue {
 			continue
 		}
 
-		entry := &smbiosMemory{
+		entry := &SmbiosMemory{
+			BaseMemoryInfo: BaseMemoryInfo{
+				Size:         mem.GetSizeString(),
+				SerialNumber: mem.SerialNumber,
+				Manufacturer: mem.Manufacturer,
+			},
 			TotalWidth:        bitWidthStr(mem.TotalWidth),
 			DataWidth:         bitWidthStr(mem.DataWidth),
-			Size:              mem.GetSizeString(),
 			FormFactor:        mem.FormFactor.String(),
 			DeviceLocator:     mem.DeviceLocator,
 			BankLocator:       mem.BankLocator,
 			Type:              mem.Type.String(),
 			TypeDetail:        mem.TypeDetail.String(),
-			Speed:             speedStr(mem.Speed),
-			Manufacturer:      mem.Manufacturer,
-			SerialNumber:      mem.SerialNumber,
+			Speed:             speed,
 			PartNumber:        mem.PartNumber,
 			Rank:              mem.GetRankString(),
 			ConfiguredSpeed:   speedStr(mem.ConfiguredSpeed),
@@ -250,157 +234,184 @@ func (m *Memory) parseSmbiosMemory() error {
 			Technology:        mem.Technology.String(),
 		}
 
-		m.PhysicalMemoryEntries = append(m.PhysicalMemoryEntries, entry)
+		validMemory = append(validMemory, entry)
 
-		fields := strings.Fields(entry.Size)
-		if len(fields) == 2 {
-			size, err := strconv.Atoi(fields[0])
-			if err != nil {
-				errs = append(errs, fmt.Errorf("parse memory %s size failed: %w", entry.BankLocator, err))
-				continue
-			}
+		if size, u, ok := valiateMemorySize(entry.Size); ok {
 			totalSize += size
-			unit = fields[1]
+			unit = u
+		} else {
+			mutilErr.Add(fmt.Errorf("invalid memory size: %s", entry.Size))
 		}
 	}
 
-	m.UsedSlots = strconv.Itoa(len(m.PhysicalMemoryEntries))
-	m.MaximumSlots = strconv.Itoa(len(memList))
-	m.PhysicalMemoryTotal = fmt.Sprintf("%d %s", totalSize, unit)
+	me.PhysicalMemoryEntries = validMemory
+	me.UsedSlots = strconv.Itoa(len(validMemory))
+	me.MaximumSlots = strconv.Itoa(len(memList))
+	me.PhysicalMemoryTotal = fmt.Sprintf("%d %s", totalSize, unit)
 
-	return utils.CombineErrors(errs)
+	return mutilErr.Unwrap()
 }
 
-func (m *Memory) parseEdacMemory() error {
-	_, err := utils.ReadDir(edacPath)
+func valiateMemorySize(size string) (int, string, bool) {
+	fields := strings.Fields(size)
+	if len(fields) != 2 {
+		return 0, "", false
+	}
+
+	num, err := strconv.Atoi(fields[0])
 	if err != nil {
+		return 0, "", false
+	}
+
+	return num, fields[1], true
+}
+
+func (me *Memory) EdacMemory() error {
+	if _, err := utils.ReadDir(edacPath); err != nil {
 		return err
 	}
 
 	dimmDirs, err := filepath.Glob(filepath.Join(edacPath, "mc*", "dimm*"))
 	if err != nil {
-		return fmt.Errorf("glob edac memory directory failed: %w", err)
+		return fmt.Errorf("failed to list DIMM directories: %v", err)
 	}
 
 	if len(dimmDirs) == 0 {
-		return fmt.Errorf("no EDAC memory directories found in %s", edacPath)
+		return fmt.Errorf("no DIMM directories found")
 	}
 
-	var errs []error
+	type dimmRes struct {
+		dimm *EdacMemory
+		err  error
+	}
+	resChan := make(chan *dimmRes, len(dimmDirs))
+	var wg sync.WaitGroup
+
 	for _, dimmDir := range dimmDirs {
-		dimm, err := parseDimmDir(dimmDir)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("parse dimm directory %s failed: %w", dimmDir, err))
+		wg.Add(1)
+		go func(dir string) {
+			defer wg.Done()
+			dimm, err := parseDimmDir(dir)
+			resChan <- &dimmRes{dimm: dimm, err: err}
+		}(dimmDir)
+	}
+
+	wg.Wait()
+	close(resChan)
+
+	var multiErr utils.MultiError
+	for res := range resChan {
+		if res.err != nil {
+			multiErr.Add(res.err)
+		} else {
+			me.EdacMemoryEntries = append(me.EdacMemoryEntries, res.dimm)
 		}
-		m.EdacMemoryEntries = append(m.EdacMemoryEntries, dimm)
 	}
 
-	if len(errs) > 0 {
-		return utils.CombineErrors(errs)
-	}
-
-	return nil
+	return multiErr.Unwrap()
 }
 
-func parseDimmDir(dir string) (*edacMemory, error) {
-	dimm := &edacMemory{
+func parseDimmDir(dir string) (*EdacMemory, error) {
+	dimm := &EdacMemory{
 		DIMMID: filepath.Base(dir),
 	}
 
 	files, err := utils.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read directory %s failed: %w", dir, err)
+		return dimm, fmt.Errorf("failed to read DIMM directory %s: %v", dir, err)
 	}
 
-	var errs []error
-	handlerFunc := func(file string) string {
-		content, err := utils.ReadOneLineFile(file)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("read %s failed: %w", file, err))
-		}
-		return content
+	var dimmFileHandlers = map[string]func(*EdacMemory, string){
+		"dimm_ce_count":  func(d *EdacMemory, v string) { d.CorrectableErrors = v },
+		"dimm_ue_count":  func(d *EdacMemory, v string) { d.UncorrectableErrors = v },
+		"dimm_dev_type":  func(d *EdacMemory, v string) { d.DeviceType = v },
+		"dimm_edac_mode": func(d *EdacMemory, v string) { d.EdacMode = v },
+		"dimm_location":  func(d *EdacMemory, v string) { d.MemoryLocation = v },
+		"dimm_mem_type":  func(d *EdacMemory, v string) { d.MemoryType = v },
+		"size":           func(d *EdacMemory, v string) { d.Size = v },
+		"dimm_label":     func(d *EdacMemory, v string) { parseDimmLabel(v, d) },
 	}
 
+	var mutilErr utils.MultiError
 	for _, file := range files {
-		filePath := filepath.Join(dir, file.Name())
-		switch file.Name() {
-		case "dimm_ce_count":
-			dimm.CorrectableErrors = handlerFunc(filePath)
-		case "dimm_ue_count":
-			dimm.UncorrectableErrors = handlerFunc(filePath)
-		case "dimm_dev_type":
-			dimm.DeviceType = handlerFunc(filePath)
-		case "dimm_edac_mode":
-			dimm.EdacMode = handlerFunc(filePath)
-		case "dimm_location":
-			dimm.MemoryLocation = handlerFunc(filePath)
-		case "dimm_mem_type":
-			dimm.MemoryType = handlerFunc(filePath)
-		case "dimm_label":
-			label := handlerFunc(filePath)
-			parseDimmLabel(label, dimm)
-		case "size":
-			dimm.Size = handlerFunc(filePath)
-		default:
-			continue
+		if handler, ok := dimmFileHandlers[file.Name()]; ok {
+			content, err := utils.ReadOneLineFile(filepath.Join(dir, file.Name()))
+			if err != nil {
+				mutilErr.Add(fmt.Errorf("failed to read file %s: %v", file.Name(), err))
+				continue
+			}
+
+			handler(dimm, content)
 		}
 	}
-	return dimm, nil
+
+	return dimm, mutilErr.Unwrap()
 }
 
-func parseDimmLabel(label string, dimm *edacMemory) {
+func parseDimmLabel(label string, dimm *EdacMemory) {
+	var labelKeyMap = map[string]func(*EdacMemory, string){
+		"SrcID": func(d *EdacMemory, v string) { d.SocketID = v },
+		"MC":    func(d *EdacMemory, v string) { d.MemoryControllerID = v },
+		"Chan":  func(d *EdacMemory, v string) { d.ChannelID = v },
+		"DIMM":  func(d *EdacMemory, v string) { d.DIMMID = v },
+	}
+
 	items := strings.Split(label, "_")
 	for _, item := range items {
-		if !strings.Contains(item, "#") {
-			continue
-		}
-		key, value, found := utils.Cut(item, "#")
-		if !found {
-			continue
-		}
-		switch key {
-		case "SrcID":
-			dimm.SocketID = value
-		case "MC":
-			dimm.MemoryControllerID = value
-		case "Chan":
-			dimm.ChannelID = value
-		case "DIMM":
-			dimm.DIMMID = value
-		default:
-			continue
+		if key, value, found := utils.Cut(item, "#"); found {
+			if handler, ok := labelKeyMap[key]; ok {
+				handler(dimm, value)
+			}
 		}
 	}
 }
 
-func (m *Memory) diagnose() {
-	var sb strings.Builder
+func (me *Memory) diagnose() {
+	sb := utils.StrBuilderPool.Get().(*strings.Builder)
+	defer func() {
+		sb.Reset()
+		utils.StrBuilderPool.Put(sb)
+	}()
 
-	// check if the amount of memory is even
-	if len(m.PhysicalMemoryEntries)%2 != 0 {
-		fmt.Fprintf(&sb, "the amount of memory should be an even number: %s;", m.UsedSlots)
+	// 检查内存数量是否为偶数
+	if len(me.PhysicalMemoryEntries)%2 != 0 {
+		fmt.Fprintf(sb, "memory count should be even: %s;", me.UsedSlots)
 	}
 
-	// check if the amount of EDAC memory is the same as physical memory
-	if len(m.EdacMemoryEntries) != len(m.PhysicalMemoryEntries) {
-		fmt.Fprintf(&sb, "the amount of EDAC memory should be the same as physical memory: %d vs %d;", len(m.EdacMemoryEntries), len(m.PhysicalMemoryEntries))
+	// 检查EDAC内存数量
+	if len(me.EdacMemoryEntries) > 0 && len(me.EdacMemoryEntries) != len(me.PhysicalMemoryEntries) {
+		fmt.Fprintf(sb, "EDAC memory count mismatch: %d vs %d;",
+			len(me.EdacMemoryEntries), len(me.PhysicalMemoryEntries))
 	}
 
-	// check if the amount of memory is greater than system memory
-	sysMem := strings.Fields(m.MemTotal)
-	phyMem := strings.Fields(m.PhysicalMemoryTotal)
-	if len(sysMem) == 2 && len(phyMem) == 2 {
-		sysMemSize, err1 := strconv.ParseFloat(sysMem[0], 64)
-		phyMemSize, err2 := strconv.ParseFloat(phyMem[0], 64)
-		if err1 != nil || err2 != nil {
-			fmt.Fprintf(&sb, "convertion memory size failed: %s vs %s;", m.MemTotal, m.PhysicalMemoryTotal)
-		} else if phyMemSize-sysMemSize > 16 {
-			fmt.Fprintf(&sb, "physical memory is greater than system memory: %s vs %s;", m.MemTotal, m.PhysicalMemoryTotal)
+	// 检查物理内存与系统内存
+	if sysSize, phySize, ok := parseMemorySizes(me.MemTotal, me.PhysicalMemoryTotal); ok {
+		if phySize-sysSize > 16 {
+			fmt.Fprintf(sb, "physical memory exceeds system memory: %s vs %s;",
+				me.PhysicalMemoryTotal, me.MemTotal)
 		}
 	}
 
 	if sb.Len() > 0 {
-		m.Diagnose = "Unhealthy"
-		m.DiagnoseDetail = sb.String()
+		me.Diagnose = diagnoseUnhealthy
+		me.DiagnoseDetail = sb.String()
 	}
+}
+
+func parseMemorySizes(sys, phy string) (float64, float64, bool) {
+	sysSize := strings.Fields(sys)
+	phySize := strings.Fields(phy)
+
+	if len(sysSize) != 2 || len(phySize) != 2 {
+		return 0, 0, false
+	}
+
+	if sysSize[1] != phySize[1] {
+		return 0, 0, false
+	}
+
+	sysNum, err1 := strconv.ParseFloat(sysSize[0], 64)
+	phyNum, err2 := strconv.ParseFloat(phySize[0], 64)
+
+	return sysNum, phyNum, err1 == nil && err2 == nil
 }
