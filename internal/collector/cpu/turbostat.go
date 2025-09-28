@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/zenithax-cc/baize/common/utils"
 )
 
-type turbostatInfo struct {
+type Turbostat struct {
 	maxFreq     int
 	minFreq     int
 	basedFreq   int
@@ -24,306 +23,146 @@ type turbostatInfo struct {
 const (
 	turbostatCmd = `turbostat -q -s Package,Core,CPU,Bzy_MHz,TSC_MHz,CoreTmp,PkgTmp,PkgWatt sleep 5`
 
-	minFieldCount    = 5
-	sumFieldCount    = 8
-	sumMarker        = `-`
-	headerMaker      = "Package"
-	initialBuffSize  = 8192
-	estimatedLine    = 66
-	estimatedPackage = 2
+	minFieldCount = 4
+	maxFieldCount = 8
+	sumMarker     = `-`
 
-	pkgIdx     = 0
-	coreIdx    = 1
-	cpuIdx     = 2
-	bzyMhzIdx  = 3
-	tscMhzIdx  = 4
-	coreTmpIdx = 5
-	pkgTmpIdx  = 6
-	pkgWattIdx = 7
+	pkgKey     = "Package"
+	coreKey    = "Core"
+	cpuKey     = "CPU"
+	bzyMhzKey  = "Bzy_MHz"
+	tscMhzKey  = "TSC_MHz"
+	coreTmpKey = "CoreTmp"
+	pkgTmpKey  = "PkgTmp"
+	pkgWattKey = "PkgWatt"
 )
 
-var (
-	turbostatPool = sync.Pool{
-		New: func() interface{} {
-			return &turbostatInfo{
-				pkgMap: make(map[string][]*ThreadEntry, estimatedPackage),
-			}
-		},
+func NewTurbostat() *Turbostat {
+	return &Turbostat{
+		pkgMap: make(map[string][]*ThreadEntry),
 	}
-
-	threadPool = sync.Pool{
-		New: func() interface{} {
-			return &ThreadEntry{}
-		},
-	}
-
-	linesPool = sync.Pool{
-		New: func() interface{} {
-			return make([][]string, 0, estimatedLine)
-		},
-	}
-
-	builderPool = sync.Pool{
-		New: func() interface{} {
-			return &strings.Builder{}
-		},
-	}
-)
-
-func newTurbostat() *turbostatInfo {
-	info := turbostatPool.Get().(*turbostatInfo)
-
-	info.maxFreq = 0
-	info.minFreq = 0
-	info.basedFreq = 0
-	info.temperature = ""
-	info.wattage = ""
-
-	for k := range info.pkgMap {
-		for _, entry := range info.pkgMap[k] {
-			threadPool.Put(entry)
-		}
-		delete(info.pkgMap, k)
-	}
-
-	return info
 }
 
-func (t *turbostatInfo) Release() {
-	turbostatPool.Put(t)
-}
+func (t *Turbostat) Collect(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
-type turboError struct {
-	Operation string
-	Err       error
-	context   string
-}
-
-func (e *turboError) Error() string {
-	return fmt.Sprintf("turbostat %s error: %v, context: %s", e.Operation, e.Err, e.context)
-}
-
-func (e *turboError) Unwrap() error {
-	return e.Err
-}
-
-func turbostat(ctx context.Context) (*turbostatInfo, error) {
-
-	output, err := execCmd(ctx)
+	op, err := utils.Run.CommandContext(ctx, turbostatCmd)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("turbostat command failed: %w", err)
 	}
 
-	info, err := parseTurbostat(output)
-	if err != nil {
-		if info != nil {
-			info.Release()
-		}
-		return nil, err
+	if err := t.processTurbostat(op); err != nil {
+		return fmt.Errorf("failed to process turbostat output: %w", err)
 	}
 
-	if err := validateData(info); err != nil {
-		info.Release()
-		return nil, err
-	}
-
-	return info, nil
+	return nil
 }
 
-func execCmd(ctx context.Context) ([]byte, error) {
-	op, err := utils.Run.CommandContext(ctx, "bash", "-c", turbostatCmd)
-	if err != nil {
-		return nil, &turboError{
-			Operation: "command_execution",
-			Err:       err,
-			context:   "turbostat command execution failed",
-		}
-	}
-	return op, nil
-}
-
-func parseTurbostat(output []byte) (*turbostatInfo, error) {
-	info := newTurbostat()
-
-	lines, err := preprocessLines(output)
-	if err != nil {
-		return info, err
-	}
-	defer func() {
-		lines = lines[:0]
-		linesPool.Put(lines)
-	}()
-
-	if err := processData(lines, info); err != nil {
-		return info, err
-	}
-
-	return info, nil
-}
-
-func preprocessLines(output []byte) ([][]string, error) {
-	lines := linesPool.Get().([][]string)
+func (t *Turbostat) processTurbostat(output []byte) error {
 
 	scanner := bufio.NewScanner(bytes.NewReader(output))
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
+	lineMap := map[string]string{
+		pkgKey:     "0",
+		coreKey:    "-",
+		cpuKey:     "-",
+		bzyMhzKey:  "-",
+		tscMhzKey:  "-",
+		coreTmpKey: "-",
+		pkgTmpKey:  "-",
+		pkgWattKey: "-",
+	}
+	keys := make([]string, 0, len(lineMap))
 
-		if len(line) == 0 {
+	result := make([]map[string]string, 192)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if len(line) < minFieldCount {
 			continue
 		}
 
 		fields := strings.Fields(line)
-
-		if len(fields) < minFieldCount || fields[pkgIdx] == headerMaker {
+		if strings.HasPrefix(line, pkgKey) || strings.HasPrefix(line, coreKey) {
+			keys = fields
 			continue
 		}
 
-		lines = append(lines, fields)
+		for i, field := range fields {
+			lineMap[keys[i]] = field
+		}
+
+		result = append(result, lineMap)
 	}
 
+	var multiErr utils.MultiError
 	if err := scanner.Err(); err != nil {
-		return nil, &turboError{
-			Operation: "line_scanning",
-			Err:       err,
-			context:   fmt.Sprintf("error scanning turbostat output lines: %d", lineNum),
-		}
+		multiErr.Add(fmt.Errorf("read turbostat output failed: %w", err))
 	}
 
-	return lines, nil
+	if err := t.parseTurbostatLines(result); err != nil {
+		multiErr.Add(fmt.Errorf("parse turbostat lines failed: %w", err))
+	}
+
+	return multiErr.Unwrap()
 }
 
-func processData(lines [][]string, info *turbostatInfo) error {
-	freqCache := make(map[string]int, len(lines))
+func (t *Turbostat) parseTurbostatLines(lines []map[string]string) error {
+	var multiErr utils.MultiError
 
-	builder := builderPool.Get().(*strings.Builder)
-	defer func() {
-		builder.Reset()
-		builderPool.Put(builder)
-	}()
-
-	coreTemps := make(map[string]string, len(lines)/2)
-
-	for lineIdx, fields := range lines {
-		if fields[pkgIdx] == sumMarker && len(fields) == sumFieldCount {
-			if err := processSummaryLine(fields, info, lineIdx); err != nil {
-				return err
+	for _, line := range lines {
+		if line[pkgKey] == sumMarker || line[coreKey] == sumMarker {
+			if err := t.processSummaryLine(line); err != nil {
+				multiErr.Add(err)
 			}
 			continue
 		}
 
-		freqStr := fields[bzyMhzIdx]
-		if _, exists := freqCache[freqStr]; !exists {
-			freq, err := fastAtoi(freqStr)
-			if err != nil {
-				return &turboError{
-					Operation: "frequency_parsing",
-					Err:       err,
-					context:   fmt.Sprintf("error parsing Bzy_MHz frequency at line %d", lineIdx),
-				}
-			}
-			freqCache[freqStr] = freq
+		thread := &ThreadEntry{
+			ProcessorID:   line[cpuKey],
+			CoreID:        line[coreKey],
+			PhysicalID:    line[pkgKey],
+			CoreFrequency: line[bzyMhzKey],
+			Temperature:   line[coreTmpKey],
 		}
+
+		if err := t.GetMaxAndMinFreq(line); err != nil {
+			multiErr.Add(err)
+		}
+
+		key := fmt.Sprintf("%s_%s", thread.PhysicalID, thread.CoreID)
+		t.pkgMap[key] = append(t.pkgMap[thread.PhysicalID], thread)
 	}
 
-	for lineIdx, fields := range lines {
-		if fields[pkgIdx] == sumMarker {
-			continue
-		}
-
-		if err := processThreadLine(fields, info, freqCache, coreTemps, builder, lineIdx); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return multiErr.Unwrap()
 }
 
-func processSummaryLine(fields []string, info *turbostatInfo, lineIdx int) error {
-	freq, err := fastAtoi(fields[bzyMhzIdx])
+func (t *Turbostat) processSummaryLine(line map[string]string) error {
+	t.temperature = line[pkgTmpKey]
+	t.wattage = line[pkgWattKey]
+	basedFreq, err := strconv.Atoi(line[bzyMhzKey])
 	if err != nil {
-		return &turboError{
-			Operation: "frequency_parsing",
-			Err:       err,
-			context:   fmt.Sprintf("error parsing TSC_MHz frequency at line %d", lineIdx),
-		}
+		return fmt.Errorf("convert based frequency failed: %w", err)
 	}
-
-	info.basedFreq = freq
-	info.temperature = fields[coreTmpIdx]
-	info.wattage = fields[pkgWattIdx]
+	t.basedFreq = basedFreq
 
 	return nil
 }
 
-func processThreadLine(fields []string, info *turbostatInfo, freqCache map[string]int, coreTemps map[string]string, builder *strings.Builder, lineIdx int) error {
-	thread := threadPool.Get().(*ThreadEntry)
-	*thread = ThreadEntry{
-		ProcessorID:   fields[cpuIdx],
-		CoreID:        fields[coreIdx],
-		PhysicalID:    fields[pkgIdx],
-		CoreFrequency: fields[bzyMhzIdx],
+func (t *Turbostat) GetMaxAndMinFreq(line map[string]string) error {
+	freq, err := strconv.Atoi(line[bzyMhzKey])
+	if err != nil {
+		return fmt.Errorf("convert frequency failed: %w", err)
 	}
 
-	builder.Reset()
-	builder.WriteString(thread.PhysicalID)
-	builder.WriteByte('_')
-	builder.WriteString(thread.CoreID)
-	coreKey := builder.String()
-
-	if len(fields) > coreTmpIdx && fields[coreTmpIdx] != "" {
-		coreTemps[coreKey] = fields[coreTmpIdx]
+	if freq > t.maxFreq {
+		t.maxFreq = freq
 	}
 
-	if temp, exists := coreTemps[coreKey]; exists {
-		thread.Temperature = temp
-	}
-
-	freq := freqCache[fields[bzyMhzIdx]]
-	if info.maxFreq < freq {
-		info.maxFreq = freq
-	}
-	if info.minFreq == 0 || info.minFreq > freq {
-		info.minFreq = freq
-	}
-
-	info.pkgMap[thread.PhysicalID] = append(info.pkgMap[thread.PhysicalID], thread)
-
-	return nil
-
-}
-
-func fastAtoi(s string) (int, error) {
-	if len(s) == 0 {
-		return 0, fmt.Errorf("empty string")
-	}
-
-	if len(s) == 1 {
-		c := s[0]
-		if c >= '0' && c <= '9' {
-			return int(c - '0'), nil
-		}
-		return 0, fmt.Errorf("invalid character: %c", c)
-	}
-
-	return strconv.Atoi(s)
-}
-
-func validateData(info *turbostatInfo) error {
-
-	if info.maxFreq <= 0 || info.minFreq <= 0 {
-		return &turboError{
-			Operation: "validation",
-			Err:       fmt.Errorf("invalid frequency range: max=%d, min=%d", info.maxFreq, info.minFreq),
-		}
-	}
-
-	if len(info.pkgMap) == 0 {
-		return &turboError{
-			Operation: "validation",
-			Err:       fmt.Errorf("no CPU package data found"),
-		}
+	if freq < t.minFreq {
+		t.minFreq = freq
 	}
 
 	return nil

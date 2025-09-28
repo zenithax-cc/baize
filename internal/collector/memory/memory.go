@@ -236,7 +236,7 @@ func (me *Memory) SmbiosMemory() error {
 
 		validMemory = append(validMemory, entry)
 
-		if size, u, ok := valiateMemorySize(entry.Size); ok {
+		if size, u, ok := validateMemorySize(entry.Size); ok {
 			totalSize += size
 			unit = u
 		} else {
@@ -252,7 +252,7 @@ func (me *Memory) SmbiosMemory() error {
 	return mutilErr.Unwrap()
 }
 
-func valiateMemorySize(size string) (int, string, bool) {
+func validateMemorySize(size string) (int, string, bool) {
 	fields := strings.Fields(size)
 	if len(fields) != 2 {
 		return 0, "", false

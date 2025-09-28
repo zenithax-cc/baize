@@ -193,27 +193,26 @@ func (c *CPU) collectSmbiosInfo(ctx context.Context) error {
 		return fmt.Errorf("failed to get smbios type 4 processor: %w", err)
 	}
 
-	threadInfo, err := turbostat(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get turbostat: %w", err)
+	turbostat := NewTurbostat()
+	if err := turbostat.Collect(ctx); err != nil {
+		return fmt.Errorf("failed to collect turbostat: %w", err)
 	}
-	defer threadInfo.Release()
 
-	c.setFrequencyAndPowerInfo(threadInfo)
+	c.setFrequencyAndPowerInfo(turbostat)
 
 	if cap(c.PhysicalCPU) < len(pkgs) {
 		c.PhysicalCPU = make([]*SmbiosInfo, 0, len(pkgs))
 	}
 
 	for _, pkg := range pkgs {
-		smbiosInfo := c.createSmbiosInfo(pkg, threadInfo)
+		smbiosInfo := c.createSmbiosInfo(pkg, turbostat)
 		c.PhysicalCPU = append(c.PhysicalCPU, smbiosInfo)
 	}
 
 	return nil
 }
 
-func (c *CPU) setFrequencyAndPowerInfo(threadInfo *turbostatInfo) {
+func (c *CPU) setFrequencyAndPowerInfo(threadInfo *Turbostat) {
 	c.MaximumFrequency = fmt.Sprintf("%d MHz", threadInfo.maxFreq)
 	c.MinimumFrequency = fmt.Sprintf("%d MHz", threadInfo.minFreq)
 	c.Temperature = fmt.Sprintf("%s ℃", threadInfo.temperature)
@@ -224,7 +223,7 @@ func (c *CPU) setFrequencyAndPowerInfo(threadInfo *turbostatInfo) {
 	}
 }
 
-func (c *CPU) createSmbiosInfo(pkg *smbios.Type4Processor, threadInfo *turbostatInfo) *SmbiosInfo {
+func (c *CPU) createSmbiosInfo(pkg *smbios.Type4Processor, threadInfo *Turbostat) *SmbiosInfo {
 	smbiosInfo := &SmbiosInfo{
 		SocketDesignation: pkg.SocketDesignation,
 		ProcessorType:     pkg.ProcessorType.String(),
