@@ -1,8 +1,11 @@
 package raid
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -13,10 +16,9 @@ import (
 	"github.com/zenithax-cc/baize/internal/collector/pci"
 )
 
-type vrocControllerManager struct {
-	ctrMap map[string]*controller // 按pci地址索引的控制器
-	mutex  sync.RWMutex
-	once   sync.Once
+type intelController struct {
+	controllerMap sync.Map // 按pci地址索引的控制器
+	once          sync.Once
 }
 
 const procMdstat = "/proc/mdstat"
@@ -31,300 +33,314 @@ func intelHandle(ctx context.Context, ctrNum int, c *controller) error {
 		return err
 	}
 
-	vrocCtr := &vrocControllerManager{
-		ctrMap: make(map[string]*controller, 2),
+	ic := &intelController{}
+
+	var multiErr utils.MultiError
+
+	multiErr.Add(ic.loadControllers(ctx))
+
+	if ctr, ok := ic.controllerMap.Load(c.PCIe.PCIeAddr); ok {
+		cc := ctr.(*controller)
+		cc.PCIe = c.PCIe
+		*c = *cc
 	}
 
-	if err := vrocCtr.init(); err != nil {
+	return multiErr.Unwrap()
+}
+
+func (ic *intelController) loadControllers(ctx context.Context) error {
+	var err error
+
+	ic.once.Do(func() {
+		err = ic.associateLDWithCtrl(ctx)
+	})
+
+	return err
+}
+
+func (ic *intelController) associateLDWithCtrl(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	if vroc, ok := vrocCtr.ctrMap[c.PCIe.PCIeAddr]; ok {
-		vroc.PCIe = c.PCIe
-		*c = *vroc
+	var multiErr utils.MultiError
+	var wg sync.WaitGroup
+	var lds []*logicalDrive
+	var err error
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		multiErr.Add(ic.processControllers(ctx))
+	}()
+
+	go func() {
+		defer wg.Done()
+		lds, err = ic.processLogicalDrives(ctx)
+		multiErr.Add(err)
+	}()
+
+	wg.Wait()
+
+	if err := multiErr.Unwrap(); err != nil {
+		return err
 	}
+
+	diskToCtrMap := ic.buildDiskToCtrMap()
+
+	ic.associateLogicalDrives(lds, diskToCtrMap)
 
 	return nil
 }
 
-func (vcm *vrocControllerManager) init() error {
-	var err error
-	vcm.once.Do(func() {
-		err = vcm.associateLDWithCtrl()
+func (ic *intelController) buildDiskToCtrMap() map[string]*controller {
+	diskToCtrMap := make(map[string]*controller)
+	ic.controllerMap.Range(func(key, value interface{}) bool {
+		if ctr, ok := value.(*controller); ok {
+			for _, pd := range ctr.PhysicalDrives {
+				diskToCtrMap[pd.MappingFile] = ctr
+			}
+		}
+		return true
 	})
-	return err
+
+	return diskToCtrMap
 }
 
-func (vcm *vrocControllerManager) associateLDWithCtrl() error {
-	var errs []error
-
-	if err := vcm.getControllers(); err != nil {
-		errs = append(errs, err)
-	}
-
-	lds, err := vcm.getLogicalDrives()
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	if len(errs) > 0 {
-		return utils.CombineErrors(errs)
-	}
-
-	diskToCtrMap := make(map[string]*controller)
-	for _, ctr := range vcm.ctrMap {
-		for _, pd := range ctr.PhysicalDrives {
-			diskToCtrMap[pd.MappingFile] = ctr
-		}
-	}
+func (ic *intelController) associateLogicalDrives(lds []*logicalDrive, diskToCtrMap map[string]*controller) {
+	ctrToLDsMap := make(map[*controller][]*logicalDrive)
 
 	for _, ld := range lds {
-		for _, disk := range ld.PhysicalDrives {
-			vcm.mutex.RLock()
-			ctr, ok := diskToCtrMap[disk.MappingFile]
-			vcm.mutex.RUnlock()
-
-			if ok {
-				ld.Location = fmt.Sprintf("/c%s/%s", ctr.ID, ld.Location)
-
-				vcm.mutex.Lock()
+		for _, pd := range ld.PhysicalDrives {
+			if ctr, ok := diskToCtrMap[pd.MappingFile]; ok {
+				ld.Location = fmt.Sprintf("/c%s/v%s", ctr.ID, ld.Location)
 				ctr.LogicalDrives = append(ctr.LogicalDrives, ld)
-				vcm.ctrMap[ctr.PCIe.PCIeAddr] = ctr
-				vcm.mutex.Unlock()
-
-				break // 找到控制器后可以跳出循环
+				ctrToLDsMap[ctr] = append(ctrToLDsMap[ctr], ld)
+				break
 			}
 		}
 	}
 
-	return nil
+	for ctr, lds := range ctrToLDsMap {
+		ctr.LogicalDrives = append(ctr.LogicalDrives, lds...)
+		ic.controllerMap.Store(ctr.PCIe.PCIeAddr, ctr)
+	}
 
 }
 
-func (vcm *vrocControllerManager) getControllers() error {
-	output, err := utils.Run.Command(mdadm, "--detail-platform")
+func (ic *intelController) processControllers(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	output, err := utils.Run.Command(mdadmPath, "--detail-platform")
 	if err != nil {
 		return fmt.Errorf("error with mdadm finding vroc controller: %w", err)
 	}
 
 	ctrs := strings.Split(string(output), "\n\n")
-	var errs []error
+	var wg sync.WaitGroup
+	var multiErr utils.MultiError
 
 	for i, content := range ctrs {
 		if len(strings.TrimSpace(content)) == 0 {
 			continue // 跳过空内容
 		}
 
-		ctr := &controller{
-			CacheSize:          "0 MB",
-			CurrentPersonality: "RAID Mode",
-			ID:                 strconv.Itoa(i),
-			PCIe:               &pci.PCIe{},
-			PhysicalDrives:     make([]*physicalDrive, 0, 8),
-			LogicalDrives:      make([]*logicalDrive, 0, 4),
-		}
+		wg.Add(1)
+		go func(index int, content string) {
+			defer wg.Done()
 
-		if err := vcm.parseController(ctr, content); err != nil {
-			errs = append(errs, err)
-		}
+			ctr := &controller{
+				CacheSize:          "0 MB",
+				CurrentPersonality: "RAID Mode",
+				ID:                 strconv.Itoa(index),
+				PCIe:               &pci.PCIe{},
+				PhysicalDrives:     make([]*physicalDrive, 0, 8),
+				LogicalDrives:      make([]*logicalDrive, 0, 4),
+			}
 
-		vcm.mutex.Lock()
-		if _, ok := vcm.ctrMap[ctr.PCIe.PCIeAddr]; !ok {
-			vcm.ctrMap[ctr.PCIe.PCIeAddr] = ctr
-		}
-		vcm.mutex.Unlock()
+			multiErr.Add(ic.parseController(ctr, content))
+
+			ic.controllerMap.Store(ctr.PCIe.PCIeAddr, ctr)
+		}(i, content)
 	}
 
-	return utils.CombineErrors(errs)
+	wg.Wait()
 
+	return multiErr.Unwrap()
 }
 
-func (vcm *vrocControllerManager) parseController(v *controller, content string) error {
-	lines := strings.Split(content, "\n")
-	ctrFlag := false
-	var errs []error
+var ctrHandler = map[string]func(*controller, string){
+	"Platform":    func(v *controller, value string) { v.ProductName = value },
+	"Version":     func(v *controller, value string) { v.Firmware = value },
+	"RAID Levels": func(v *controller, value string) { v.RaidLevelSupported = value },
+	"Max Disks":   func(v *controller, value string) { v.SupportedDrives = value },
+}
 
-	for _, line := range lines {
-		key, value, found := strings.Cut(line, ":")
+func (ic *intelController) parseController(v *controller, content string) error {
+	var multiErr utils.MultiError
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if len(line) == 0 {
+			continue
+		}
+
+		key, value, found := utils.Cut(line, ":")
 		if !found {
 			continue
 		}
 
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
+		if handler, ok := ctrHandler[key]; ok {
+			handler(v, value)
+			continue
+		}
 
-		switch {
-		case key == "Platform":
-			v.ProductName = value
-		case key == "Version":
-			v.Firmware = value
-		case key == "RAID Levels":
-			v.RaidLevelSupported = value
-		case key == "Max Disks":
-			v.SupportedDrives = value
-		case key == "I/O Controller" && !ctrFlag:
-			ctrFlag = true
-			fields := strings.Fields(value)
-			if len(fields) > 0 {
-				v.PCIe.PCIeAddr = filepath.Base(fields[0])
-			}
-		case strings.HasPrefix(key, "Port") && !strings.Contains(value, "no device attached"):
-			if err := vcm.processPhysicalDrive(v, key, value); err != nil {
-				errs = append(errs, err)
-			}
+		if strings.HasPrefix(key, "Port") && !strings.Contains(value, "no device attached") {
+			multiErr.Add(ic.procesSataDrive(v, key, value))
+			continue
+		}
 
-		case key == "NVMe under VMD":
-			// 处理NVMe设备
-			if err := vcm.processNVMeDrive(v, value); err != nil {
-				errs = append(errs, err)
+		if key == "NVMe under VMD" {
+			multiErr.Add(ic.processNVMeDrive(v, value))
+			continue
+		}
+
+		if key == "I/O Controller" {
+			if len(v.PCIe.PCIeAddr) == 0 {
+				fields := strings.Fields(value)
+				v.PCIe.PCIeAddr = filepath.Base(strings.TrimSpace(fields[0]))
 			}
 		}
 	}
 
-	return utils.CombineErrors(errs)
+	return multiErr.Unwrap()
 }
 
-func (vcm *vrocControllerManager) processPhysicalDrive(ctr *controller, location, value string) error {
-
+func (ic *intelController) procesSataDrive(ctr *controller, part, value string) error {
 	fields := strings.Fields(value)
-	if len(fields) == 0 {
-		return fmt.Errorf("invalid physical drive value: %s", value)
+	if len(fields) < 2 {
+		return fmt.Errorf("invalid SATA drive value: %s", value)
 	}
 
-	mappingFile := fields[0]
 	pd := &physicalDrive{
-		MappingFile: mappingFile,
-		Location:    location,
+		MappingFile: strings.TrimSpace(fields[0]),
+		Location:    part,
 	}
 
-	// 获取SMART数据
 	err := pd.getSmartctlData("vroc", "", "")
-
-	// 存储到映射表中
-	pdMapMutex.Lock()
-	if _, ok := pdMap[pd.MappingFile]; !ok {
-		pdMap[pd.MappingFile] = pd
-	}
-	pdMapMutex.Unlock()
+	pdc.Set(pd.MappingFile, pd)
 
 	ctr.PhysicalDrives = append(ctr.PhysicalDrives, pd)
-
 	return err
 }
 
-func (vcm *vrocControllerManager) processNVMeDrive(ctr *controller, value string) error {
-	if strings.HasPrefix(value, "/sys/devices") {
-		// 从系统路径获取NVMe设备
-		return vcm.processNVMeFromSys(ctr)
-	}
-
-	// 从值字符串获取NVMe设备
-	return vcm.processNVMeFromValue(ctr, value)
-}
-
-func (vcm *vrocControllerManager) processNVMeFromSys(ctr *controller) error {
-	nvmePath := filepath.Join(sysBusPath, ctr.PCIe.PCIeAddr, "nvme")
-	dirs, err := utils.ReadDir(nvmePath)
-	if err != nil || len(dirs) == 0 {
-		return fmt.Errorf("failed to read NVMe directory %s: %w", nvmePath, err)
-	}
-
-	pdMapMutex.RLock()
-	pd, ok := pdMap[dirs[0].Name()]
-	pdMapMutex.RUnlock()
-
-	if ok {
-		ctr.PhysicalDrives = append(ctr.PhysicalDrives, pd)
-	}
-
-	return nil
-}
-
-func (vcm *vrocControllerManager) processNVMeFromValue(ctr *controller, value string) error {
+func (ic *intelController) processNVMeDrive(ctr *controller, value string) error {
 	fields := strings.Fields(value)
-	if len(fields) == 0 {
-		return fmt.Errorf("invalid NVMe value: %s", value)
+	if len(fields) < 2 {
+		return fmt.Errorf("invalid NVMe drive value: %s", value)
 	}
 
-	name := fields[0]
-	trimName := nvmeRegex.ReplaceAllString(name, "")
+	device := strings.TrimSpace(fields[0])
+	mappingFile := device
 
-	pdMapMutex.RLock()
-	pd, ok := pdMap[trimName]
-	pdMapMutex.RUnlock()
+	if strings.HasPrefix(device, "/sys/devices") {
+		dev, err := GetBlockByDevicesPath(device)
+		if err != nil {
+			return fmt.Errorf("get block by devices path error: %w", err)
+		}
 
-	if ok {
-		pd.MappingFile = name
-		ctr.PhysicalDrives = append(ctr.PhysicalDrives, pd)
+		mappingFile = dev
+		device = dev
+
+		if strings.Contains(device, "nvme") {
+			device = nvmeRegex.ReplaceAllString(device, "")
+		}
+	}
+
+	if nvme, ok := pdc.Get(device); ok {
+		nvme.MappingFile = mappingFile
+		ctr.PhysicalDrives = append(ctr.PhysicalDrives, nvme)
 	}
 
 	return nil
 }
 
-func (vcm *vrocControllerManager) getLogicalDrives() ([]*logicalDrive, error) {
-	lines, err := utils.ReadLines(procMdstat)
-	if err != nil {
+func (ic *intelController) processLogicalDrives(ctx context.Context) ([]*logicalDrive, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	var errs []error
-	lds := make([]*logicalDrive, 0, 4)
-	for i, line := range lines[1:] {
+	content, err := os.ReadFile(procMdstat)
+	if err != nil {
+		return nil, fmt.Errorf("read %s error: %w", procMdstat, err)
+	}
+
+	var num int
+	var multiErr utils.MultiError
+	result := make([]*logicalDrive, 0, 4)
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "md") || strings.Contains(line, "inactive") {
 			continue
 		}
+
 		fields := strings.Fields(line)
+
 		if len(fields) < 5 {
 			continue
 		}
 
 		ld := &logicalDrive{
-			Location:    "v" + strconv.Itoa(i),
+			Location:    "v" + strconv.Itoa(num),
 			MappingFile: "/dev/" + fields[0],
 		}
 
-		if err := vcm.parseLogicalDrive(ld); err != nil {
-			errs = append(errs, err)
-		}
-
-		vcm.associatePDWithLD(ld, fields[4:])
-
-		lds = append(lds, ld)
+		multiErr.Add(parseLogicalDrive(ld))
+		associatePDWithLD(ld, fields[4:])
+		result = append(result, ld)
+		num++
 	}
-	return lds, utils.CombineErrors(errs)
+
+	return result, multiErr.Unwrap()
 }
 
-func (vcm *vrocControllerManager) parseLogicalDrive(ld *logicalDrive) error {
-	output, err := utils.Run.Command(mdadm, "-D", ld.MappingFile)
+var parseLDFields = map[string]func(*logicalDrive, string){
+	"Raid Level":         func(v *logicalDrive, value string) { v.Type = value },
+	"Total Devices":      func(v *logicalDrive, value string) { v.NumberOfDrives = value },
+	"Array Size":         func(v *logicalDrive, value string) { v.Capacity = value },
+	"State":              func(v *logicalDrive, value string) { v.State = value },
+	"Consistency Policy": func(v *logicalDrive, value string) { v.Cache = value },
+	"UUID":               func(v *logicalDrive, value string) { v.ScsiNaaId = value },
+}
+
+func parseLogicalDrive(ld *logicalDrive) error {
+	output, err := utils.Run.Command(mdadmPath, "-D", ld.MappingFile)
 	if err != nil {
 		return fmt.Errorf("error with mdadm -D %s: %w", ld.MappingFile, err)
 	}
 
-	fieldMap := map[string]*string{
-		"Raid Level":         &ld.Type,
-		"Total Devices":      &ld.NumberOfDrives,
-		"Array Size":         &ld.Capacity,
-		"State":              &ld.State,
-		"Consistency Policy": &ld.Cache,
-		"UUID":               &ld.ScsiNaaId}
-
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		key, value, find := strings.Cut(line, ":")
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		key, value, find := utils.Cut(line, ":")
 		if !find {
 			continue
 		}
 
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if ptr, exists := fieldMap[key]; exists {
-			*ptr = value
+		if handler, ok := parseLDFields[key]; ok {
+			handler(ld, value)
 		}
 	}
-	return nil
+
+	return scanner.Err()
 }
 
-func (vcm *vrocControllerManager) associatePDWithLD(ld *logicalDrive, fields []string) {
+func associatePDWithLD(ld *logicalDrive, fields []string) {
 	for _, field := range fields {
 		field = ldRegex.ReplaceAllString(field, "")
 		device := "/dev/" + field
@@ -334,11 +350,7 @@ func (vcm *vrocControllerManager) associatePDWithLD(ld *logicalDrive, fields []s
 			name = nvmeRegex.ReplaceAllString(device, "")
 		}
 
-		pdMapMutex.RLock()
-		pd, ok := pdMap[name]
-		pdMapMutex.RUnlock()
-
-		if ok {
+		if pd, ok := pdc.Get(name); ok {
 			ld.PhysicalDrives = append(ld.PhysicalDrives, pd)
 		}
 	}

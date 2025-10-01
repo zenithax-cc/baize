@@ -43,6 +43,10 @@ func getBlockByPath() []string {
 	var blocks []string
 	// 遍历sys/block目录下的所有文件
 	for _, device := range devices {
+		name := device.Name()
+		if strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "md") {
+			continue
+		}
 		blocks = append(blocks, device.Name())
 	}
 
@@ -118,4 +122,26 @@ func readLink(path string) (string, error) {
 	}
 
 	return filepath.Base(link), nil
+}
+
+func GetBlockByDevicesPath(devicesPath string) (string, error) {
+	enttries, err := utils.ReadDir(sysBlockPath)
+	if err != nil {
+		return "", err
+	}
+
+	for _, entry := range enttries {
+		devPath := filepath.Join(sysBlockPath, entry.Name())
+
+		info, err := os.Readlink(devPath)
+		if err != nil {
+			continue
+		}
+
+		if strings.HasPrefix(info, devicesPath) {
+			return DevicePrefix + filepath.Base(info), nil
+		}
+	}
+
+	return "", fmt.Errorf("not found block device")
 }

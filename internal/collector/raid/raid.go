@@ -299,11 +299,17 @@ func (ctr *Controllers) processNVMe(ctx context.Context, bus string) error {
 		multiErr.Add(err)
 	}
 
-	if len(dirs) > 0 {
+	if len(dirs) == 1 {
 		nvme.physicalDrive.MappingFile = DevicePrefix + dirs[0].Name()
 		err := nvme.physicalDrive.getSmartctlData("nvme", "", "")
-		if err != nil {
-			multiErr.Add(err)
+		multiErr.Add(err)
+
+		namespacePath := filepath.Join(nvmePath, dirs[0].Name())
+		namespaceDirs, err := utils.ReadDir(namespacePath)
+		multiErr.Add(err)
+		for _, dir := range namespaceDirs {
+			name := DevicePrefix + dir.Name()
+			nvme.Namespaces = append(nvme.Namespaces, name)
 		}
 	}
 
