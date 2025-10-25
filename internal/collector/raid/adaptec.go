@@ -57,7 +57,7 @@ func (a *arcController) checkController(ctrNum int) error {
 
 	a.SerialNumber = string(bytes.TrimSpace(sn))
 	for i := 0; i < ctrNum+1; i++ {
-		output, err := utils.Run.Command("bash", "-c", fmt.Sprintf("%s GETCONFIG %d AD | grep %s", arcconf, i, a.SerialNumber))
+		output, err := utils.Run.Command("bash", "-c", fmt.Sprintf("%s GETCONFIG %d AD | grep %s", arcconfPath, i, a.SerialNumber))
 		if err == nil && len(output) > 0 {
 			a.ID = strconv.Itoa(i)
 			return nil
@@ -68,7 +68,7 @@ func (a *arcController) checkController(ctrNum int) error {
 }
 
 func (a *arcController) getController() error {
-	ctr, err := utils.Run.Command(arcconf, "GETCONFIG", a.ID, "AD")
+	ctr, err := utils.Run.Command(arcconfPath, "GETCONFIG", a.ID, "AD")
 	if err != nil {
 		return fmt.Errorf("arcconf  failed: %w", err)
 	}
@@ -110,7 +110,7 @@ func (a *arcController) getController() error {
 }
 
 func (a *arcController) getPhysicalDrives() error {
-	pds, err := utils.Run.Command(arcconf, "GETCONFIG", a.ID, "PD")
+	pds, err := utils.Run.Command(arcconfPath, "GETCONFIG", a.ID, "PD")
 	if err != nil {
 		return fmt.Errorf("arcconf pd failed: %w", err)
 	}
@@ -171,17 +171,13 @@ func (a *arcController) parsePhysicalDrive(content string) error {
 	}
 
 	a.PhysicalDrives = append(a.PhysicalDrives, &res)
-	pdMapMutex.Lock()
-	if _, ok := pdMap[res.SN]; !ok {
-		pdMap[res.SN] = &res
-	}
-	pdMapMutex.Unlock()
+	pdc.Set(res.SN, &res)
 
 	return utils.CombineErrors(errs)
 }
 
 func (a *arcController) getLogicalDrives() error {
-	lds, err := utils.Run.Command(arcconf, "GETCONFIG", a.ID, "LD")
+	lds, err := utils.Run.Command(arcconfPath, "GETCONFIG", a.ID, "LD")
 	if err != nil {
 		return fmt.Errorf("arcconf ld failed: %w", err)
 	}
@@ -223,11 +219,9 @@ func (a *arcController) parseLogicalDrive(content string) error {
 
 		if strings.HasPrefix(key, "Segment ") {
 			val := strings.Fields(value)
-			pdMapMutex.RLock()
-			if pd, ok := pdMap[val[len(val)-1]]; ok {
+			if pd, ok := pdc.Get(val[len(val)-1]); ok {
 				res.PhysicalDrives = append(res.PhysicalDrives, pd)
 			}
-			pdMapMutex.RUnlock()
 			continue
 		}
 

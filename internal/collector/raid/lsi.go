@@ -59,28 +59,41 @@ func lsiHandle(ctx context.Context, ctrNum int, c *controller) error {
 		return &LsiErr{Operation: "load controller data", Details: c.PCIe.PCIeID, Err: err}
 	}
 
+	*c = *lsiCtr.controller
 	return nil
 }
 
+// findController finds the controller with the given PCIe address.
 func (lc *lsiController) findController(ctx context.Context, ctrNum int) error {
-	pcieAddr := strings.TrimPrefix(lc.PCIe.PCIeAddr, "00")
-
-}
-
-func (lc *lsiController) findController(ctrNum int) error {
-	pcieAddr := strings.TrimPrefix(lc.PCIe.PCIeAddr, "00")
 	for i := 0; i < ctrNum; i++ {
-		output, err := utils.Run.Command("bash", "-c", fmt.Sprintf("%s /c%d show | grep %s", storcliPath, i, pcieAddr))
-		if err == nil && len(output) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if lc.isControllerAtSlot(i) {
 			lc.ID = strconv.Itoa(i)
 			return nil
 		}
 	}
-	return fmt.Errorf("not found LSI controller %s", lc.PCIe.PCIeAddr)
+
+	return fmt.Errorf("LSI controller %s not found", lc.PCIe.PCIeAddr)
 }
 
-func ctrCMD(cmd []string) ([]byte, error) {
+func (lc *lsiController) isControllerAtSlot(slot int) bool {
+	pcieAddr := strings.TrimPrefix(lc.PCIe.PCIeAddr, "00")
+	cmd := fmt.Sprintf("%s /c%d show | grep %s", storcliPath, slot, pcieAddr)
+	output, err := utils.Run.Command("bash", "-c", cmd)
+	return err == nil && len(output) > 0
+}
+
+// executeStorcli executes the storcli command and returns the output.
+func executeStorcli(cmd []string) ([]byte, error) {
+	if len(cmd) == 0 {
+		return nil, fmt.Errorf("storcli command is empty")
+	}
+
 	output, err := utils.Run.Command(storcliPath, cmd...)
+
 	if err != nil {
 		return nil, fmt.Errorf("storcli failed: %w", err)
 	}
@@ -88,33 +101,58 @@ func ctrCMD(cmd []string) ([]byte, error) {
 	return output, nil
 }
 
-func (lc *lsiController) getController() error {
-	var (
-		output   []byte
-		mutilErr utils.MultiError
-		err      error
-	)
+// loadControllerData loads the controller data from the storcli command.
+func (lc *lsiController) loadControllerData(ctx context.Context) error {
+	var multiErr utils.MultiError
 
+	// HBA卡获取physical drives信息
 	if lc.PCIe.SubClassID == "07" {
-		output, err = ctrCMD([]string{"/c" + lc.ID, "show", "J"})
-		if err != nil {
-			return err
+		if err := lc.loadBasicInfo(ctx); err != nil {
+			multiErr.Add(err)
 		}
-
-		mutilErr.Add(lc.unmarshalController(output))
 	}
 
-	output, err = ctrCMD([]string{"/c" + lc.ID, "show", "all", "J"})
+	if err := lc.loadDetailedInfo(ctx); err != nil {
+		multiErr.Add(err)
+	}
+
+	return multiErr.Unwrap()
+}
+
+// loadBasicInfo loads the basic information of the controller.
+func (lc *lsiController) loadBasicInfo(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	output, err := executeStorcli([]string{"/c" + lc.ID, "show", "J"})
 	if err != nil {
 		return err
 	}
 
-	mutilErr.Add(lc.unmarshalController(output))
-
-	return mutilErr.Unwrap()
+	return lc.parseControllerJSON(output)
 }
 
-func (lc *lsiController) unmarshalController(output []byte) error {
+// loadDetailedInfo loads the detailed information of the controller.
+func (lc *lsiController) loadDetailedInfo(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	output, err := executeStorcli([]string{"/c" + lc.ID, "show", "all", "J"})
+	if err != nil {
+		return err
+	}
+
+	return lc.parseControllerJSON(output)
+}
+
+// parseControllerJSON parses the controller JSON output.
+func (lc *lsiController) parseControllerJSON(output []byte) error {
 	var lsiCtr StorcliRes
 	if err := json.Unmarshal(output, &lsiCtr); err != nil {
 		return fmt.Errorf("unmarshal lsi controller json error: %w", err)
@@ -124,76 +162,38 @@ func (lc *lsiController) unmarshalController(output []byte) error {
 		return fmt.Errorf("expected one controller,but got %d", len(lsiCtr.Controllers))
 	}
 
-	return lc.parseController(lsiCtr.Controllers[0].ResponseData)
+	return lc.parseControllerData(lsiCtr.Controllers[0].ResponseData)
 }
 
-func (lc *lsiController) parseController(data *ResponseData) error {
+// parseControllerData parses the controller data.
+func (lc *lsiController) parseControllerData(data *ResponseData) error {
 	var multiErr utils.MultiError
-	lc.populateController(data)
+
+	lc.populateBasicInfo(data)
 
 	if len(data.PDList) > 0 {
-		var wg sync.WaitGroup
-		pdChan := make(chan *physicalDrive, len(data.PDList))
-		errChan := make(chan error, len(data.PDList))
-
-		for _, pd := range data.PDList {
-			wg.Add(1)
-			go func(phyDrive *pdList) {
-				defer wg.Done()
-				drive, err := lc.parsePhysicalDrive(phyDrive)
-				if err != nil {
-					errChan <- err
-				}
-				pdChan <- drive
-			}(pd)
-		}
-
-		wg.Wait()
-		close(pdChan)
-		close(errChan)
-
-		for err := range errChan {
+		if err := lc.parsePhysicalDriveList(data.PDList); err != nil {
 			multiErr.Add(err)
-		}
-		for drive := range pdChan {
-			lc.PhysicalDrives = append(lc.PhysicalDrives, drive)
-			pdc.Set(drive.DeviceId, drive)
 		}
 	}
 
 	if len(data.VDList) > 0 {
 		for _, vd := range data.VDList {
 			if err := lc.parseVirtualDrive(vd); err != nil {
-				multiErr.Add(err)
+				multiErr.Add(fmt.Errorf("parse virtual drive %s error: %w", vd.DGVD, err))
 			}
 		}
 	}
 
-	if len(data.EnclosureList) > 0 {
-		for _, enclosure := range data.EnclosureList {
-			if err := lc.parseBackplane(enclosure); err != nil {
-				multiErr.Add(err)
-			}
-		}
-	}
+	lc.processEnclosureList(data.EnclosureList, &multiErr)
+	lc.processBatteries(data.CachevaultInfo)
 
-	if len(data.CachevaultInfo) > 0 {
-		for _, cv := range data.CachevaultInfo {
-			cachevault := &battery{
-				Model:         cv.Model,
-				State:         cv.State,
-				Temperature:   cv.Temp,
-				RetentionTime: cv.RetentionTime,
-				Mode:          cv.Mode,
-				MfgDate:       cv.MfgDate,
-			}
-			lc.Battery = append(lc.Battery, cachevault)
-		}
-	}
-	return &multiErr
+	return multiErr.Unwrap()
 }
 
-func (lc *lsiController) populateController(data *ResponseData) {
+// populateBasicInfo populates the basic information of the controller.
+func (lc *lsiController) populateBasicInfo(data *ResponseData) {
+
 	lc.NumberOfRaid = strconv.Itoa(data.VirtualDrives)
 	lc.NumberOfDisk = strconv.Itoa(data.PhysicalDrives)
 	lc.NumberOfBackplane = strconv.Itoa(data.Enclosures)
@@ -243,6 +243,42 @@ func (lc *lsiController) populateController(data *ResponseData) {
 	}
 }
 
+// parsePhysicalDriveList parses the physical drive list.
+func (lc *lsiController) parsePhysicalDriveList(pdList []*pdList) error {
+	var multiErr utils.MultiError
+
+	for _, pd := range pdList {
+		drive, err := lc.parsePhysicalDrive(pd)
+		if err != nil {
+			multiErr.Add(fmt.Errorf("parse physical drive %s error: %w", pd.DID, err))
+		}
+		lc.PhysicalDrives = append(lc.PhysicalDrives, drive)
+		pdc.Set(drive.Location, drive)
+	}
+
+	return multiErr.Unwrap()
+}
+
+var physicalDriveFieldMap = map[string]func(*physicalDrive, string){
+	"Shield Couter":                    func(pd *physicalDrive, val string) { pd.ShieldCounter = val },
+	"Media Error Count":                func(pd *physicalDrive, val string) { pd.MediaErrorCount = val },
+	"Other Error Count":                func(pd *physicalDrive, val string) { pd.OtherErrorCount = val },
+	"Predictive Failure Count":         func(pd *physicalDrive, val string) { pd.PredictiveFailureCount = val },
+	"Drive Temperature":                func(pd *physicalDrive, val string) { pd.Temperature = val },
+	"S.M.A.R.T alert flagged by drive": func(pd *physicalDrive, val string) { pd.SmartAlert = val },
+	"SN":                               func(pd *physicalDrive, val string) { pd.SN = val },
+	"Manufacturer Id":                  func(pd *physicalDrive, val string) { pd.OemVendor = val },
+	"FRU/CRU":                          func(pd *physicalDrive, val string) { pd.FruCru = val },
+	"WWN":                              func(pd *physicalDrive, val string) { pd.WWN = val },
+	"Firmware Revision":                func(pd *physicalDrive, val string) { pd.Firmware = val },
+	"Device Speed":                     func(pd *physicalDrive, val string) { pd.DeviceSpeed = val },
+	"Link Speed":                       func(pd *physicalDrive, val string) { pd.LinkSpeed = val },
+	"Write Cache":                      func(pd *physicalDrive, val string) { pd.WriteCache = val },
+	"Logical Sector Size":              func(pd *physicalDrive, val string) { pd.LogicalSectorSize = val },
+	"Physical Sector Size":             func(pd *physicalDrive, val string) { pd.PhysicalSectorSize = val },
+}
+
+// parsePhysicalDrive parses the physical drive information.
 func (lc *lsiController) parsePhysicalDrive(pd *pdList) (*physicalDrive, error) {
 	res := &physicalDrive{
 		DeviceId:           strconv.Itoa(pd.DID),
@@ -253,65 +289,34 @@ func (lc *lsiController) parsePhysicalDrive(pd *pdList) (*physicalDrive, error) 
 		Model:              pd.Model,
 		PhysicalSectorSize: pd.SeSz,
 		Type:               pd.Type,
+		DG:                 parseDG(pd.DG),
 	}
 
-	res.DG = parseDG(pd.DG)
-
-	eidSlt := strings.Split(pd.EIDSlt, ":")
-	if len(eidSlt) != 2 {
-		return res, fmt.Errorf("invalid EIDSlt format: %s", pd.EIDSlt)
-	}
-	res.EnclosureId = eidSlt[0]
-	res.SlotId = eidSlt[1]
-	res.Location = fmt.Sprintf("/c%s/e%s/s%s", lc.ID, res.EnclosureId, res.SlotId)
-
-	var errs []error
-	if err := res.getSmartctlData("lsi", lc.ID, res.DeviceId); err != nil {
-		errs = append(errs, err)
+	if err := lc.parsePhysicalDriveLocation(pd.EIDSlt, res); err != nil {
+		return res, err
 	}
 
-	fieldMap := map[string]*string{
-		"Shield Couter":                    &res.ShieldCounter,
-		"Media Error Count":                &res.MediaErrorCount,
-		"Other Error Count":                &res.OtherErrorCount,
-		"Predictive Failure Count":         &res.PredictiveFailureCount,
-		"Drive Temperature":                &res.Temperature,
-		"S.M.A.R.T alert flagged by drive": &res.SmartAlert,
-		"SN":                               &res.SN,
-		"Manufacturer Id":                  &res.OemVendor,
-		"FRU/CRU":                          &res.FruCru,
-		"WWN":                              &res.WWN,
-		"Firmware Revision":                &res.Firmware,
-		"Device Speed":                     &res.DeviceSpeed,
-		"Link Speed":                       &res.LinkSpeed,
-		"Write Cache":                      &res.WriteCache,
-		"Logical Sector Size":              &res.LogicalSectorSize,
-		"Physical Sector Size":             &res.PhysicalSectorSize,
-	}
-	output, err := utils.Run.Command(storcli, res.Location, "show", "all")
-	if err != nil {
-		return res, fmt.Errorf("storcli %s failed: %w", res.Location, err)
+	var multiErr utils.MultiError
+
+	if err := parsePhysicalDriveDetails(res); err != nil {
+		multiErr.Add(err)
 	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		key, value, find := utils.Cut(line, "=")
-		if !find {
-			continue
+	res.MappingFile = GetBlockByWWN(res.WWN)
+	if len(res.MappingFile) > 0 {
+		if err := res.getSmartctlData("vroc", "", ""); err != nil {
+			multiErr.Add(err)
 		}
-
-		if ptr, exists := fieldMap[key]; exists {
-			*ptr = value
+	} else {
+		if err := res.getSmartctlData("lsi", lc.ID, res.DeviceId); err != nil {
+			multiErr.Add(err)
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		errs = append(errs, fmt.Errorf("error scanning physical drive: %w", err))
-	}
 
-	return res, utils.CombineErrors(errs)
+	return res, multiErr.Unwrap()
 }
 
+// parseDG parses the DG value.
 func parseDG(dg any) string {
 	switch v := dg.(type) {
 	case string:
@@ -320,8 +325,62 @@ func parseDG(dg any) string {
 		return strconv.FormatFloat(v, 'f', -1, 64)
 	case int:
 		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	default:
+		return "Unknown"
 	}
-	return "Unknown"
+}
+
+// parsePhysicalDriveLocation parses the physical drive location.
+func (lc *lsiController) parsePhysicalDriveLocation(eidSlt string, pdInfo *physicalDrive) error {
+	parts := strings.Split(eidSlt, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid EID:SLT format: %s", eidSlt)
+	}
+
+	pdInfo.EnclosureId = parts[0]
+	pdInfo.SlotId = parts[1]
+	pdInfo.Location = fmt.Sprintf("/c%s/e%s/s%s", lc.ID, pdInfo.EnclosureId, pdInfo.SlotId)
+
+	return nil
+}
+
+// parsePhysicalDriveDetails parses the physical drive details.
+func parsePhysicalDriveDetails(pd *physicalDrive) error {
+	output, err := executeStorcli([]string{pd.Location, "show", "all"})
+	if err != nil {
+		return err
+	}
+
+	scanner := scannerPool.Get().(*bufio.Scanner)
+	defer func() {
+		scannerPool.Put(scanner)
+	}()
+
+	*scanner = *bufio.NewScanner(bytes.NewReader(output))
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		key, value, find := utils.Cut(line, "=")
+		if !find {
+			continue
+		}
+		if fn, ok := physicalDriveFieldMap[key]; ok {
+			fn(pd, value)
+		}
+	}
+
+	return scanner.Err()
+}
+
+var virtualDriveFieldMap = map[string]func(vd *logicalDrive, val string){
+	"Strip Size":                func(vd *logicalDrive, val string) { vd.StripSize = val },
+	"Number of Blocks":          func(vd *logicalDrive, val string) { vd.NumberOfBlocks = val },
+	"Number of Drives Per Span": func(vd *logicalDrive, val string) { vd.NumberOfDrivesPerSpan = val },
+	"OS Drive Name":             func(vd *logicalDrive, val string) { vd.MappingFile = val },
+	"Creation Date":             func(vd *logicalDrive, val string) { vd.CreateTime = val },
+	"SCSI NAA Id":               func(vd *logicalDrive, val string) { vd.ScsiNaaId = val },
 }
 
 func (lc *lsiController) parseVirtualDrive(vd *vdList) error {
@@ -333,40 +392,32 @@ func (lc *lsiController) parseVirtualDrive(vd *vdList) error {
 		Access:   vd.Access,
 		Cache:    vd.Cache,
 	}
-	dgVD := strings.Split(vd.DGVD, "/")
-	if len(dgVD) != 2 {
-		return fmt.Errorf("invalid DGVD format: %s", vd.DGVD)
-	}
-	ld.DG = dgVD[0]
-	ld.VD = dgVD[1]
-	ld.Location = fmt.Sprintf("/c%s/v%s", lc.ID, ld.VD)
-
-	fieldMap := map[string]*string{
-		"Strip Size":                &ld.StripSize,
-		"Number of Blocks":          &ld.NumberOfBlocks,
-		"Number of Drives Per Span": &ld.NumberOfDrivesPerSpan,
-		"OS Drive Name":             &ld.MappingFile,
-		"Creation Date":             &ld.CreateTime,
-		"SCSI NAA Id":               &ld.ScsiNaaId,
+	if err := lc.parseVirtualDriveLocation(vd.DGVD, ld); err != nil {
+		return err
 	}
 
-	output, err := utils.Run.Command(storcli, ld.Location, "show", "all")
+	output, err := executeStorcli([]string{ld.Location, "show", "all"})
 	if err != nil {
-		return fmt.Errorf("storcli %s failed: %w", ld.Location, err)
+		return err
 	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(output))
+	scanner := scannerPool.Get().(*bufio.Scanner)
+	defer func() {
+		scannerPool.Put(scanner)
+	}()
+
+	*scanner = *bufio.NewScanner(bytes.NewReader(output))
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
 		if lsiPDRegex.MatchString(line) {
 			pds := strings.Fields(line)
 			pdLocation := fmt.Sprintf("/c%s/e%s", lc.ID, strings.ReplaceAll(pds[0], ":", "/s"))
-			pdMapMutex.Lock()
-			if pd, ok := pdMap[pdLocation]; ok {
+			if pd, ok := pdc.Get(pdLocation); ok {
+				pd.MappingFile = ld.MappingFile
 				ld.PhysicalDrives = append(ld.PhysicalDrives, pd)
 			}
-			pdMapMutex.Unlock()
 			continue
 		}
 
@@ -375,16 +426,46 @@ func (lc *lsiController) parseVirtualDrive(vd *vdList) error {
 			continue
 		}
 
-		if ptr, exists := fieldMap[key]; exists {
-			*ptr = value
+		if fn, exists := virtualDriveFieldMap[key]; exists {
+			fn(ld, value)
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error scanning virtual drive: %w", err)
 	}
 
 	lc.LogicalDrives = append(lc.LogicalDrives, ld)
+
+	return scanner.Err()
+}
+
+// parseVirtualDriveLocation parses the virtual drive location.
+func (lc *lsiController) parseVirtualDriveLocation(dgvd string, ld *logicalDrive) error {
+	parts := strings.Split(dgvd, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid DG:VD format: %s", dgvd)
+	}
+
+	ld.DG = parts[0]
+	ld.VD = parts[1]
+	ld.Location = fmt.Sprintf("/c%s/v%s", lc.ID, ld.VD)
+
 	return nil
+}
+
+func (lc *lsiController) processEnclosureList(enclList []*enclosureList, multiErr *utils.MultiError) {
+	for _, encl := range enclList {
+		if err := lc.parseBackplane(encl); err != nil {
+			multiErr.Add(fmt.Errorf("parse enclosure %d:%w", encl.EID, err))
+		}
+	}
+}
+
+var backplaneFieldMap = map[string]func(*backplane, string){
+	"Connector Name":          func(bpl *backplane, val string) { bpl.ConnectorName = val },
+	"Enclosure Type":          func(bpl *backplane, val string) { bpl.EnclosureType = val },
+	"Enclosure Serial Number": func(bpl *backplane, val string) { bpl.EnclosureSerialNumber = val },
+	"Device Type":             func(bpl *backplane, val string) { bpl.DeviceType = val },
+	"Vendor Identification":   func(bpl *backplane, val string) { bpl.Vendor = val },
+	"Product Identification":  func(bpl *backplane, val string) { bpl.ProductIdentification = val },
+	"Product Revision Level":  func(bpl *backplane, val string) { bpl.ProductRevisionLevel = val },
 }
 
 func (lc *lsiController) parseBackplane(encl *enclosureList) error {
@@ -396,21 +477,17 @@ func (lc *lsiController) parseBackplane(encl *enclosureList) error {
 		PhysicalDriveCount: strconv.Itoa(encl.PD),
 	}
 
-	output, err := utils.Run.Command(storcli, bpl.Location, "show", "all")
+	output, err := executeStorcli([]string{bpl.Location, "show", "all"})
 	if err != nil {
-		return fmt.Errorf("storcli %s failed: %w", bpl.Location, err)
+		return err
 	}
 
-	fieldMap := map[string]*string{
-		"Connector Name":          &bpl.ConnectorName,
-		"Enclosure Type":          &bpl.EnclosureType,
-		"Enclosure Serial Number": &bpl.EnclosureSerialNumber,
-		"Device Type":             &bpl.DeviceType,
-		"Vendor Identification":   &bpl.Vendor,
-		"Product Identification":  &bpl.ProductIdentification,
-		"Product Revision Level":  &bpl.ProductRevisionLevel,
-	}
-	scanner := bufio.NewScanner(bytes.NewReader(output))
+	scanner := scannerPool.Get().(*bufio.Scanner)
+	defer func() {
+		scannerPool.Put(scanner)
+	}()
+
+	scanner = bufio.NewScanner(bytes.NewReader(output))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		key, value, find := utils.Cut(line, "=")
@@ -418,15 +495,32 @@ func (lc *lsiController) parseBackplane(encl *enclosureList) error {
 			continue
 		}
 
-		if ptr, exists := fieldMap[key]; exists {
-			*ptr = value
+		if fn, exists := backplaneFieldMap[key]; exists {
+			fn(bpl, value)
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error scanning backplane: %w", err)
+	lc.Backplanes = append(lc.Backplanes, bpl)
+
+	return scanner.Err()
+}
+
+func (lc *lsiController) processBatteries(batteries []*cacheVaultInfo) {
+	if len(batteries) == 0 {
+		return
 	}
 
-	lc.Backplanes = append(lc.Backplanes, bpl)
-	return nil
+	lc.Battery = make([]*battery, len(batteries))
+
+	for _, cv := range batteries {
+		cachevault := &battery{
+			Model:         cv.Model,
+			State:         cv.State,
+			Temperature:   cv.Temp,
+			RetentionTime: cv.RetentionTime,
+			Mode:          cv.Mode,
+			MfgDate:       cv.MfgDate,
+		}
+		lc.Battery = append(lc.Battery, cachevault)
+	}
 }
