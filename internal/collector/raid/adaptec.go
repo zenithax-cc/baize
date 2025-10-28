@@ -133,8 +133,8 @@ func (a *arcController) parsePhysicalDrive(content string) error {
 		"Block Size":      &res.PhysicalSectorSize,
 		"Transfer Speed":  &res.LinkSpeed,
 		"Vendor":          &res.Vendor,
-		"Model":           &res.Model,
-		"Firmware":        &res.Firmware,
+		"Model":           &res.ModelName,
+		"Firmware":        &res.FirmwareVersion,
 		"Serial Number":   &res.SN,
 		"World-wide name": &res.WWN,
 		"Write cache":     &res.WriteCache,
@@ -155,7 +155,7 @@ func (a *arcController) parsePhysicalDrive(content string) error {
 			res.SlotId = strings.Fields(val[1])[1]
 			res.Location = fmt.Sprintf("/c%s/e%s/s%s", a.ID, res.EnclosureId, res.SlotId)
 			hlid := fmt.Sprintf("%d,%s,%s", h-1, res.EnclosureId, res.SlotId)
-			if err := res.getSmartctlData("adaptec", hlid, ""); err != nil {
+			if err := res.collectSMARTData(SMARTConfig{Option: "aacraid", DeviceID: hlid}); err != nil {
 				errs = append(errs, err)
 			}
 			continue

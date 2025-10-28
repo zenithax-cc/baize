@@ -67,7 +67,7 @@ func (r *RAID) PrintBrief() {
 			sb.WriteString("\n" + selectFields(vd, ldFields, 2, nil).String())
 			pdMap := map[string]int{}
 			for _, pd := range vd.PhysicalDrives {
-				pdDetail := fmt.Sprintf("%s %s %s %s %s", pd.Vendor, pd.Capacity, pd.FormFactor, pd.Interface, pd.RotationRate)
+				pdDetail := fmt.Sprintf("%s %s %s %s %s", pd.Vendor, pd.Capacity, pd.FormFactor, pd.ProtocolType, pd.RotationRate)
 				pdMap[pdDetail]++
 			}
 			for k, v := range pdMap {
@@ -79,7 +79,7 @@ func (r *RAID) PrintBrief() {
 			if pd.State == "Onln" || pd.State == "OK" {
 				continue
 			}
-			pdDetail := fmt.Sprintf("%s %s %s %s %s", pd.Vendor, pd.Capacity, pd.FormFactor, pd.Interface, pd.RotationRate)
+			pdDetail := fmt.Sprintf("%s %s %s %s %s", pd.Vendor, pd.Capacity, pd.FormFactor, pd.ProtocolType, pd.RotationRate)
 			if pd.State == "JBOD" {
 				otherPDs.jbod[pdDetail]++
 			} else if pd.State == "UGood" {
@@ -92,7 +92,7 @@ func (r *RAID) PrintBrief() {
 
 	if len(r.Controllers.NVMe) > 0 {
 		for _, nvme := range r.Controllers.NVMe {
-			nvmeDetail := fmt.Sprintf("%s %s %s %s", nvme.Vendor, nvme.Capacity, nvme.Interface, nvme.RotationRate)
+			nvmeDetail := fmt.Sprintf("%s %s %s %s", nvme.Vendor, nvme.Capacity, nvme.ProtocolType, nvme.RotationRate)
 			otherPDs.nvme[nvmeDetail]++
 		}
 	}

@@ -113,7 +113,7 @@ func (ctr *Controllers) Collect(ctx context.Context) error {
 
 	tasks := []collectTask{
 		{name: "NVMe", fn: ctr.nvmeCollect},
-		{name: "hpe", fn: ctr.vendorCollect},
+		{name: "Controllers", fn: ctr.vendorCollect},
 	}
 
 	return ctr.executeTasks(ctx, tasks)
@@ -263,12 +263,8 @@ func (ctr *Controllers) nvmeCollect(ctx context.Context) error {
 }
 
 const (
-	NVMeInterface    = "U.2"
-	NVMeMediumType   = "NVMe SSD"
-	NVMeRotationRate = "Solid State Device"
-	NVMeFormFactor   = "2.5 inch"
-	DevicePrefix     = "/dev/"
-	NVMeSubPath      = "nvme"
+	DevicePrefix = "/dev/"
+	NVMeSubPath  = "nvme"
 )
 
 // processNVMe 处理单个NVMe硬盘信息
@@ -283,13 +279,8 @@ func (ctr *Controllers) processNVMe(ctx context.Context, bus string) error {
 	}
 
 	nvme := &nvme{
-		PCIe: p,
-		physicalDrive: physicalDrive{
-			RotationRate: NVMeRotationRate,
-			MediumType:   NVMeMediumType,
-			FormFactor:   NVMeFormFactor,
-			Interface:    NVMeInterface,
-		},
+		PCIe:          p,
+		physicalDrive: physicalDrive{},
 	}
 
 	var multiErr utils.MultiError
@@ -301,7 +292,7 @@ func (ctr *Controllers) processNVMe(ctx context.Context, bus string) error {
 
 	if len(dirs) == 1 {
 		nvme.physicalDrive.MappingFile = DevicePrefix + dirs[0].Name()
-		err := nvme.physicalDrive.getSmartctlData("nvme", "", "")
+		err := nvme.physicalDrive.collectSMARTData(SMARTConfig{Option: "nvme", BlockDevice: nvme.physicalDrive.MappingFile})
 		multiErr.Add(err)
 
 		namespacePath := filepath.Join(nvmePath, dirs[0].Name())

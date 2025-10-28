@@ -1,4 +1,4 @@
-package raid
+package smartctl
 
 import (
 	"encoding/json"
@@ -14,6 +14,8 @@ import (
 type protocol string
 
 const (
+	smartctlPath = "/usr/sbin/smartctl"
+
 	ProtocolATA  protocol = "ATA"
 	ProtocolSATA protocol = "SATA"
 	ProtocolSAS  protocol = "SAS"
@@ -24,8 +26,8 @@ const (
 	hddMediaType = "Hard Disk Device"
 
 	suffixCmd        = " -a -j | grep -v ^$"
-	writeCacheSuffix = " -g wcache | grep -i cache"
-	readCacheSuffix  = " -g rcache | grep -i cache"
+	writeCacheSuffix = " -g wcache | grep cahce"
+	readCacheSuffix  = " -g rcache | grep cahce"
 )
 
 var preMap = map[string]string{
@@ -43,10 +45,10 @@ type SMARTConfig struct {
 	DeviceID     string
 }
 
-func (pd *physicalDrive) collectSMARTData(cfg SMARTConfig) error {
+func Collect(cfg SMARTConfig) (*PhysicalDrive, error) {
 	cmd, ok := preMap[cfg.Option]
 	if !ok {
-		return fmt.Errorf("not supported SMART type: %s", cfg.Option)
+		return nil, fmt.Errorf("not supported SMART type: %s", cfg.Option)
 	}
 
 	var smartctlCmd string
@@ -55,25 +57,26 @@ func (pd *physicalDrive) collectSMARTData(cfg SMARTConfig) error {
 	switch cfg.Option {
 	case "cciss":
 		smartctlCmd = fmt.Sprintf(cmd, smartctlPath, cfg.BlockDevice, cfg.DeviceID, suffixCmd)
-		cacheCmd = fmt.Sprintf(cmd, smartctlPath, cfg.BlockDevice, cfg.DeviceID, "")
+		cacheCmd = fmt.Sprintf(cmd, smartctlPath, cfg.BlockDevice, cfg.DeviceID)
 	case "aacraid":
 		smartctlCmd = fmt.Sprintf(cmd, smartctlPath, cfg.BlockDevice, cfg.DeviceID, suffixCmd)
-		cacheCmd = fmt.Sprintf(cmd, smartctlPath, cfg.BlockDevice, cfg.DeviceID, "")
+		cacheCmd = fmt.Sprintf(cmd, smartctlPath, cfg.BlockDevice, cfg.DeviceID)
 	case "megaraid":
 		smartctlCmd = fmt.Sprintf(cmd, smartctlPath, cfg.ControllerID, cfg.DeviceID, suffixCmd)
-		cacheCmd = fmt.Sprintf(cmd, smartctlPath, cfg.ControllerID, cfg.DeviceID, "")
+		cacheCmd = fmt.Sprintf(cmd, smartctlPath, cfg.ControllerID, cfg.DeviceID)
 	case "nvme", "jbod":
 		smartctlCmd = fmt.Sprintf(cmd, smartctlPath, cfg.DeviceID, suffixCmd)
-		cacheCmd = fmt.Sprintf(cmd, smartctlPath, cfg.DeviceID, "")
+		cacheCmd = fmt.Sprintf(cmd, smartctlPath, cfg.DeviceID)
 	default:
-		return fmt.Errorf("not supported SMART type: %s", cfg.Option)
+		return nil, fmt.Errorf("not supported SMART type: %s", cfg.Option)
 	}
 
 	output, err := utils.Run.Command("bash", "-c", smartctlCmd)
 	if err != nil {
-		return fmt.Errorf("running smartctl failed: %w", err)
+		return nil, fmt.Errorf("running smartctl failed: %w", err)
 	}
 
+	var pd PhysicalDrive
 	var MultiErr utils.MultiError
 
 	if err := pd.parseSMARTData(output); err != nil {
@@ -84,24 +87,19 @@ func (pd *physicalDrive) collectSMARTData(cfg SMARTConfig) error {
 		MultiErr.Add(err)
 	}
 
-	return MultiErr.Unwrap()
+	return &pd, MultiErr.Unwrap()
 }
 
-func (pd *physicalDrive) parseSMARTData(data []byte) error {
+func (pd *PhysicalDrive) parseSMARTData(data []byte) error {
 	if len(data) == 0 {
 		return fmt.Errorf("SMART data is empty")
 	}
 
-	type DeviceProtocol struct {
-		Device `json:"device"`
-	}
-
-	var device DeviceProtocol
-
+	var device Device
 	if err := json.Unmarshal(data, &device); err != nil {
 		return fmt.Errorf("unmarshal Device error: %w", err)
 	}
-	println(device.Protocol)
+
 	switch device.Protocol {
 	case string(ProtocolATA), string(ProtocolSATA):
 		return pd.parseSMARTDataSATA(data)
@@ -114,7 +112,7 @@ func (pd *physicalDrive) parseSMARTData(data []byte) error {
 	}
 }
 
-func (pd *physicalDrive) parseSMARTDataSATA(data []byte) error {
+func (pd *PhysicalDrive) parseSMARTDataSATA(data []byte) error {
 	var ataInfo AtaSmartInfo
 	if err := json.Unmarshal(data, &ataInfo); err != nil {
 		return fmt.Errorf("unmarshal AtaSmartInfo error: %w", err)
@@ -129,7 +127,7 @@ func (pd *physicalDrive) parseSMARTDataSATA(data []byte) error {
 	return nil
 }
 
-func (pd *physicalDrive) parseSMARTDataSAS(data []byte) error {
+func (pd *PhysicalDrive) parseSMARTDataSAS(data []byte) error {
 	var sasInfo SasSmartInfo
 	if err := json.Unmarshal(data, &sasInfo); err != nil {
 		return fmt.Errorf("unmarshal SasSmartInfo error: %w", err)
@@ -150,7 +148,7 @@ func (pd *physicalDrive) parseSMARTDataSAS(data []byte) error {
 	return nil
 }
 
-func (pd *physicalDrive) parseSMARTDataNVMe(data []byte) error {
+func (pd *PhysicalDrive) parseSMARTDataNVMe(data []byte) error {
 	var nvmeInfo NVMeSmartInfo
 	if err := json.Unmarshal(data, &nvmeInfo); err != nil {
 		return fmt.Errorf("unmarshal NVMeSmartInfo error: %w", err)
@@ -169,7 +167,7 @@ func (pd *physicalDrive) parseSMARTDataNVMe(data []byte) error {
 	return nil
 }
 
-func (bi *BasicInfo) parseBaseInfo(pd *physicalDrive) {
+func (bi *BasicInfo) parseBaseInfo(pd *PhysicalDrive) {
 	pd.ModelName = bi.ModelName
 	pd.SN = bi.SerialNumber
 	pd.SMARTStatus = bi.SmartStatus.Passed
@@ -177,8 +175,8 @@ func (bi *BasicInfo) parseBaseInfo(pd *physicalDrive) {
 	pd.PowerOnTime = strconv.Itoa(bi.PowerOnTime.Hours)
 	pd.FirmwareVersion = bi.FirmwareVersion
 	pd.FormFactor = bi.FormFactor.Name
-	pd.LogicalSectorSize = strconv.Itoa(bi.LogicalBlockSize)
-	pd.PhysicalSectorSize = strconv.Itoa(bi.PhysicalBlockSize)
+	pd.LogicalSectorSize = bi.LogicalBlockSize
+	pd.PhysicalSectorSize = bi.PhysicalBlockSize
 
 	pd.RotationRate = strconv.Itoa(bi.RotationRate) + " RPM"
 	if bi.RotationRate == 0 {
@@ -251,15 +249,15 @@ func parseModelName(modelName string) (string, string) {
 	return retVendor, retProduct
 }
 
-func (pd *physicalDrive) getWriteAndReadCache(cacheCmd string) error {
+func (pd *PhysicalDrive) getWriteAndReadCache(cacheCmd string) error {
 	var MultiErr utils.MultiError
-	woutput, err := utils.Run.Command("bash", "-c", fmt.Sprintf("%s%s", cacheCmd, writeCacheSuffix))
+	woutput, err := utils.Run.Command("bash", "-c", fmt.Sprintf(cacheCmd, writeCacheSuffix))
 	MultiErr.Add(err)
 	if len(woutput) > 0 && err == nil {
 		pd.WriteCache = parseCacheData(woutput)
 	}
 
-	routput, err := utils.Run.Command("bash", "-c", fmt.Sprintf("%s%s", cacheCmd, readCacheSuffix))
+	routput, err := utils.Run.Command("bash", "-c", fmt.Sprintf(cacheCmd, readCacheSuffix))
 	MultiErr.Add(err)
 	if len(routput) > 0 && err == nil {
 		pd.ReadCache = parseCacheData(routput)

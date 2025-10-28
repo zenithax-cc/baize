@@ -201,12 +201,12 @@ func (hc *hpeController) parsePhysicalDrive(ctx context.Context, slot string) er
 			}
 		},
 		"Status":                  func(v string) { pd.State = v },
-		"Interface Type":          func(v string) { pd.Interface = v },
+		"Interface Type":          func(v string) { pd.ProtocolType = v },
 		"Size":                    func(v string) { pd.Capacity = v },
-		"Firmware Revision":       func(v string) { pd.Firmware = v },
+		"Firmware Revision":       func(v string) { pd.FirmwareVersion = v },
 		"Serial Number":           func(v string) { pd.SN = v },
 		"WWID":                    func(v string) { pd.WWN = v },
-		"Model":                   func(v string) { pd.Model = v },
+		"Model":                   func(v string) { pd.ModelName = v },
 		"Current Temperature (C)": func(v string) { pd.Temperature = v + " ℃" },
 		"PHY Transfer Rate":       func(v string) { pd.DeviceSpeed = v },
 		"Logical/Physical Block Size": func(v string) {
@@ -241,7 +241,7 @@ func updatePDSMART(pd *physicalDrive) error {
 
 	if block := GetBlockByWWN(pd.WWN); block != "" {
 		pd.MappingFile = block
-		if err := pd.getSmartctlData("vroc", "", ""); err != nil {
+		if err := pd.collectSMARTData(SMARTConfig{Option: "jbod", BlockDevice: pd.MappingFile}); err != nil {
 			return err
 		}
 		return nil
@@ -249,7 +249,7 @@ func updatePDSMART(pd *physicalDrive) error {
 
 	if did, err := strconv.Atoi(pd.DeviceId); err == nil {
 		adjustedID := did - int(atomic.LoadInt64(&failedPDCounter))
-		if err := pd.getSmartctlData("hpe", "", strconv.Itoa(adjustedID)); err != nil {
+		if err := pd.collectSMARTData(SMARTConfig{Option: "cciss", DeviceID: strconv.Itoa(adjustedID)}); err != nil {
 			return err
 		}
 	}

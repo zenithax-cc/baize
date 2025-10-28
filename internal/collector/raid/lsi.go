@@ -250,7 +250,7 @@ func (lc *lsiController) parsePhysicalDriveList(pdList []*pdList) error {
 	for _, pd := range pdList {
 		drive, err := lc.parsePhysicalDrive(pd)
 		if err != nil {
-			multiErr.Add(fmt.Errorf("parse physical drive %s error: %w", pd.DID, err))
+			multiErr.Add(fmt.Errorf("parse physical drive %d error: %w", pd.DID, err))
 		}
 		lc.PhysicalDrives = append(lc.PhysicalDrives, drive)
 		pdc.Set(drive.Location, drive)
@@ -267,10 +267,8 @@ var physicalDriveFieldMap = map[string]func(*physicalDrive, string){
 	"Drive Temperature":                func(pd *physicalDrive, val string) { pd.Temperature = val },
 	"S.M.A.R.T alert flagged by drive": func(pd *physicalDrive, val string) { pd.SmartAlert = val },
 	"SN":                               func(pd *physicalDrive, val string) { pd.SN = val },
-	"Manufacturer Id":                  func(pd *physicalDrive, val string) { pd.OemVendor = val },
-	"FRU/CRU":                          func(pd *physicalDrive, val string) { pd.FruCru = val },
 	"WWN":                              func(pd *physicalDrive, val string) { pd.WWN = val },
-	"Firmware Revision":                func(pd *physicalDrive, val string) { pd.Firmware = val },
+	"Firmware Revision":                func(pd *physicalDrive, val string) { pd.FirmwareVersion = val },
 	"Device Speed":                     func(pd *physicalDrive, val string) { pd.DeviceSpeed = val },
 	"Link Speed":                       func(pd *physicalDrive, val string) { pd.LinkSpeed = val },
 	"Write Cache":                      func(pd *physicalDrive, val string) { pd.WriteCache = val },
@@ -284,11 +282,9 @@ func (lc *lsiController) parsePhysicalDrive(pd *pdList) (*physicalDrive, error) 
 		DeviceId:           strconv.Itoa(pd.DID),
 		State:              pd.State,
 		Capacity:           pd.Size,
-		MediumType:         pd.Med,
-		Interface:          pd.Intf,
-		Model:              pd.Model,
+		ProtocolType:       pd.Intf,
+		ModelName:          pd.Model,
 		PhysicalSectorSize: pd.SeSz,
-		Type:               pd.Type,
 		DG:                 parseDG(pd.DG),
 	}
 
@@ -304,11 +300,11 @@ func (lc *lsiController) parsePhysicalDrive(pd *pdList) (*physicalDrive, error) 
 
 	res.MappingFile = GetBlockByWWN(res.WWN)
 	if len(res.MappingFile) > 0 {
-		if err := res.getSmartctlData("vroc", "", ""); err != nil {
+		if err := res.collectSMARTData(SMARTConfig{Option: "jbod", BlockDevice: res.MappingFile}); err != nil {
 			multiErr.Add(err)
 		}
 	} else {
-		if err := res.getSmartctlData("lsi", lc.ID, res.DeviceId); err != nil {
+		if err := res.collectSMARTData(SMARTConfig{Option: "megaraid", ControllerID: lc.ID, DeviceID: res.DeviceId}); err != nil {
 			multiErr.Add(err)
 		}
 	}
@@ -438,9 +434,9 @@ func (lc *lsiController) parseVirtualDrive(vd *vdList) error {
 
 // parseVirtualDriveLocation parses the virtual drive location.
 func (lc *lsiController) parseVirtualDriveLocation(dgvd string, ld *logicalDrive) error {
-	parts := strings.Split(dgvd, ":")
+	parts := strings.Split(dgvd, "/")
 	if len(parts) != 2 {
-		return fmt.Errorf("invalid DG:VD format: %s", dgvd)
+		return fmt.Errorf("invalid DG/VD format: %s", dgvd)
 	}
 
 	ld.DG = parts[0]

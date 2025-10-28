@@ -230,7 +230,7 @@ func (ic *intelController) procesSataDrive(ctr *controller, part, value string) 
 		Location:    part,
 	}
 
-	err := pd.getSmartctlData("vroc", "", "")
+	err := pd.collectSMARTData(SMARTConfig{Option: "jbod", BlockDevice: pd.MappingFile})
 	pdc.Set(pd.MappingFile, pd)
 
 	ctr.PhysicalDrives = append(ctr.PhysicalDrives, pd)
