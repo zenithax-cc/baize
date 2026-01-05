@@ -1,4 +1,4 @@
-package executor
+package execute
 
 import (
 	"bytes"
@@ -66,25 +66,25 @@ func (r *ExecResult) AsError() error {
 }
 
 // Execute 执行命令，使用默认超时时间
-func Execute(name string, args ...string) *ExecResult {
+func Command(name string, args ...string) *ExecResult {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
-	return ExecuteWithContext(ctx, name, args...)
+	return CommandWithContext(ctx, name, args...)
 }
 
 // ExecuteWithTimeout 执行命令，自定义超时时间
-func ExecuteWithTimeout(timeout time.Duration, name string, args ...string) *ExecResult {
+func CommandWithTimeout(timeout time.Duration, name string, args ...string) *ExecResult {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return ExecuteWithContext(ctx, name, args...)
+	return CommandWithContext(ctx, name, args...)
 }
 
 // ExecuteShell 执行 shell 命令
-func ExecuteShell(cmd string) *ExecResult {
+func ShellCommand(cmd string) *ExecResult {
 	if cmd == "" {
 		return &ExecResult{ExitCode: -1, Err: ErrEmptyCommand}
 	}
-	return Execute(DefaultShell, "-c", cmd)
+	return Command(DefaultShell, "-c", cmd)
 }
 
 // ExecuteShellWithTimeout 执行 shell 命令，自定义超时时间
@@ -92,11 +92,11 @@ func ExecuteShellWithTimeout(timeout time.Duration, cmd string) *ExecResult {
 	if cmd == "" {
 		return &ExecResult{ExitCode: -1, Err: ErrEmptyCommand}
 	}
-	return ExecuteWithTimeout(timeout, DefaultShell, "-c", cmd)
+	return CommandWithTimeout(timeout, DefaultShell, "-c", cmd)
 }
 
 // ExecuteWithContext 使用 context 执行命令
-func ExecuteWithContext(ctx context.Context, name string, args ...string) *ExecResult {
+func CommandWithContext(ctx context.Context, name string, args ...string) *ExecResult {
 	result := &ExecResult{ExitCode: -1}
 
 	if name == "" {

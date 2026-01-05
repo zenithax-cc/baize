@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bufio"
+	"os"
 	"strings"
 )
 
@@ -25,4 +26,13 @@ func ParseKeyValue(text string, sep string) map[string]string {
 
 	}
 	return result
+}
+
+// FileExists checks if the file exists and is a regular file
+func FileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
