@@ -2,22 +2,24 @@ package main
 
 import (
 	"fmt"
-
-	"github.com/zenithax-cc/baize/internal/collector/pci"
+	"net"
 )
 
 func main() {
-	str, err := pci.GetSerialRAIDPCIBus()
+	nf, err := net.Interfaces()
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
 
-	for _, v := range str {
-		pciInfo := pci.New(v)
-		if err := pciInfo.Collect(); err != nil {
-			panic(err)
+	for _, n := range nf {
+		ipNet, err := n.Addrs()
+		if err != nil {
+			fmt.Println(err)
 		}
 
-		fmt.Println(pciInfo)
+		for _, addr := range ipNet {
+			fmt.Println(addr.String())
+		}
 	}
+
 }

@@ -5,64 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/zenithax-cc/baize/internal/collector/pci"
-)
-
-// Constants and Predefined Values
-
-// Interface status constants
-const (
-	StatusUp      = "up"
-	StatusDown    = "down"
-	StatusUnknown = "unknown"
-)
-
-// Duplex mode constants
-const (
-	DuplexFull    = "full"
-	DuplexHalf    = "half"
-	DuplexUnknown = "unknown"
-)
-
-// Bond mode constants
-const (
-	BondModeBalanceRR    = "balance-rr"
-	BondModeActiveBackup = "active-backup"
-	BondModeBalanceXOR   = "balance-xor"
-	BondModeBroadcast    = "broadcast"
-	BondMode8023AD       = "802.3ad"
-	BondModeBalanceTLB   = "balance-tlb"
-	BondModeBalanceALB   = "balance-alb"
-)
-
-// LACP rate constants
-const (
-	LACPRateSlow = "slow"
-	LACPRateFast = "fast"
-)
-
-// Validation patterns
-var (
-	macAddressPattern = regexp.MustCompile(`^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$`)
-	vlanIDPattern     = regexp.MustCompile(`^\d{1,4}$`)
-)
-
-// Predefined errors
-var (
-	ErrInvalidMACAddress  = errors.New("invalid MAC address format")
-	ErrInvalidSpeed       = errors.New("invalid speed value")
-	ErrInvalidMTU         = errors.New("invalid MTU value")
-	ErrInterfaceNotFound  = errors.New("interface not found")
-	ErrInvalidBondMode    = errors.New("invalid bond mode")
-	ErrNoSlaveInterfaces  = errors.New("bond has no slave interfaces")
-	ErrDuplicateInterface = errors.New("duplicate interface name")
-	ErrInvalidVLAN        = errors.New("invalid VLAN ID")
-	ErrNegativeValue      = errors.New("value cannot be negative")
-	ErrExceedsMaxValue    = errors.New("value exceeds maximum allowed")
 )
 
 // Core Types
@@ -70,9 +16,9 @@ var (
 // Network represents complete network configuration including physical,
 // virtual, and bonded interfaces. It provides indexed access for O(1) lookups.
 type Network struct {
-	NetInterfaces  []NetInterface  `json:"net_interfaces,omitempty"`
-	PhyInterfaces  []PhyInterface  `json:"phy_interfaces,omitempty"`
-	BondInterfaces []BondInterface `json:"bond_interfaces,omitempty"`
+	NetInterfaces  []NetInterface  `json:"net_interfaces,omitzero"`
+	PhyInterfaces  []PhyInterface  `json:"phy_interfaces,omitzero"`
+	BondInterfaces []BondInterface `json:"bond_interfaces,omitzero"`
 
 	// Indexes for O(1) lookup - not serialized to JSON
 	netInterfaceIdx  map[string]*NetInterface  `json:"-"`
@@ -83,78 +29,84 @@ type Network struct {
 // NetInterface represents a network interface from /sys/class/net.
 // Includes both physical and virtual interfaces.
 type NetInterface struct {
-	DeviceName      string `json:"device_name,omitempty"`
-	MACAddress      string `json:"mac_address,omitempty"`
-	Driver          string `json:"driver,omitempty"`
-	DriverVersion   string `json:"driver_version,omitempty"`
-	FirmwareVersion string `json:"firmware_version,omitempty"`
-	Status          string `json:"status,omitempty"`
-	Speed           uint64 `json:"speed,omitempty"` // Speed in Mbps (numeric for calculations)
-	Duplex          string `json:"duplex,omitempty"`
-	MTU             uint32 `json:"mtu,omitempty"` // MTU as numeric value
-	Port            string `json:"port,omitempty"`
-	LinkDetected    bool   `json:"link_detected,omitempty"` // Boolean for clarity
+	DeviceName      string        `json:"device_name,omitzero"`
+	MACAddress      string        `json:"mac_address,omitzero"`
+	Driver          string        `json:"driver,omitzero"`
+	DriverVersion   string        `json:"driver_version,omitzero"`
+	FirmwareVersion string        `json:"firmware_version,omitzero"`
+	Status          string        `json:"status,omitzero"`
+	Speed           string        `json:"speed,omitzero"` // Speed in Mbps (numeric for calculations)
+	Duplex          string        `json:"duplex,omitzero"`
+	MTU             string        `json:"mtu,omitzero"` // MTU as numeric value
+	Port            string        `json:"port,omitzero"`
+	LinkDetected    string        `json:"link_detected,omitzero"` // Boolean for clarity
+	IPv4            []IPv4Address `json:"ipv4,omitzero"`
+}
+
+type IPv4Address struct {
+	Address   string `json:"address,omitzero"`
+	Netmask   string `json:"netmask,omitzero"`
+	Gateway   string `json:"gateway,omitzero"`
+	PrefixLen string `json:"prefix_length,omitzero"`
 }
 
 // PhyInterface represents physical interface details including
 // hardware configuration and upstream switch information.
 type PhyInterface struct {
-	DeviceName string     `json:"device_name,omitempty"` // Added for indexing
-	RingBuffer RingBuffer `json:"ring_buffer,omitempty"`
-	Channel    Channel    `json:"channel,omitempty"`
-	LLDP       LLDP       `json:"lldp,omitempty"`
-	PCI        pci.PCI    `json:"pci,omitempty"`
+	DeviceName string     `json:"device_name,omitzero"` // Added for indexing
+	RingBuffer RingBuffer `json:"ring_buffer,omitzero"`
+	Channel    Channel    `json:"channel,omitzero"`
+	LLDP       LLDP       `json:"lldp,omitzero"`
+	PCI        pci.PCI    `json:"pci,omitzero"`
 }
 
 // RingBuffer represents NIC ring buffer configuration.
 // Using uint32 for numeric values enables calculations and comparisons.
 type RingBuffer struct {
-	CurrentRX uint32 `json:"current_rx,omitempty"`
-	CurrentTX uint32 `json:"current_tx,omitempty"`
-	MaxRX     uint32 `json:"max_rx,omitempty"`
-	MaxTX     uint32 `json:"max_tx,omitempty"`
+	CurrentRX uint32 `json:"current_rx,omitzero"`
+	CurrentTX uint32 `json:"current_tx,omitzero"`
+	MaxRX     uint32 `json:"max_rx,omitzero"`
+	MaxTX     uint32 `json:"max_tx,omitzero"`
 }
 
 // Channel represents NIC channel/queue configuration.
 type Channel struct {
-	MaxRX           uint32 `json:"max_rx,omitempty"`
-	MaxTX           uint32 `json:"max_tx,omitempty"`
-	MaxCombined     uint32 `json:"max_combined,omitempty"`
-	MaxOther        uint32 `json:"max_other,omitempty"`
-	CurrentRX       uint32 `json:"current_rx,omitempty"`
-	CurrentTX       uint32 `json:"current_tx,omitempty"`
-	CurrentCombined uint32 `json:"current_combined,omitempty"`
-	CurrentOther    uint32 `json:"current_other,omitempty"`
+	MaxRX           uint32 `json:"max_rx,omitzero"`
+	MaxTX           uint32 `json:"max_tx,omitzero"`
+	MaxCombined     uint32 `json:"max_combined,omitzero"`
+	CurrentRX       uint32 `json:"current_rx,omitzero"`
+	CurrentTX       uint32 `json:"current_tx,omitzero"`
+	CurrentCombined uint32 `json:"current_combined,omitzero"`
 }
 
 // LLDP represents Link Layer Discovery Protocol information
 // from upstream ToR (Top of Rack) switch.
 type LLDP struct {
-	Interface    string `json:"interface,omitempty"`
-	ChassisID    string `json:"chassis_id,omitempty"`
-	SystemName   string `json:"system_name,omitempty"`
-	SystemDesc   string `json:"system_desc,omitempty"`
-	PortID       string `json:"port_id,omitempty"`
-	PortDesc     string `json:"port_desc,omitempty"`
-	ManagementIP string `json:"management_ip,omitempty"`
-	VLAN         uint16 `json:"vlan,omitempty"` // VLAN ID: 1-4094
-	PPVID        uint16 `json:"ppvid,omitempty"`
+	Interface    string `json:"interface,omitzero"`
+	ChassisID    string `json:"chassis_id,omitzero"`
+	SystemName   string `json:"system_name,omitzero"`
+	SystemDesc   string `json:"system_desc,omitzero"`
+	PortID       string `json:"port_id,omitzero"`
+	PortDesc     string `json:"port_desc,omitzero"`
+	ManagementIP string `json:"management_ip,omitzero"`
+	VLAN         uint16 `json:"vlan,omitzero"` // VLAN ID: 1-4094
+	PPVID        uint16 `json:"ppvid,omitzero"`
 }
 
 // BondInterface represents a Linux bonding interface configuration.
 type BondInterface struct {
-	BondName           string           `json:"bond_name,omitempty"`
-	BondMode           string           `json:"bond_mode,omitempty"`
-	TransmitHashPolicy string           `json:"transmit_hash_policy,omitempty"` // Fixed: lowercase 't'
-	MIIStatus          string           `json:"mii_status,omitempty"`
-	MIIPollingInterval uint32           `json:"mii_polling_interval,omitempty"` // Milliseconds
-	LACPRate           string           `json:"lacp_rate,omitempty"`
-	MACAddress         string           `json:"mac_address,omitempty"`
-	AggregatorID       uint16           `json:"aggregator_id,omitempty"`
-	NumberOfPorts      uint8            `json:"number_of_ports,omitempty"`
-	Diagnose           DiagnoseStatus   `json:"diagnose,omitempty"`
-	DiagnoseDetail     string           `json:"diagnose_detail,omitempty"`
-	SlaveInterfaces    []SlaveInterface `json:"slave_interfaces,omitempty"`
+	BondName           string           `json:"bond_name,omitzero"`
+	BondMode           string           `json:"bond_mode,omitzero"`
+	TransmitHashPolicy string           `json:"transmit_hash_policy,omitzero"` // Fixed: lowercase 't'
+	MIIStatus          string           `json:"mii_status,omitzero"`
+	MIIPollingInterval uint32           `json:"mii_polling_interval,omitzero"` // Milliseconds
+	LACPRate           string           `json:"lacp_rate,omitzero"`
+	MACAddress         string           `json:"mac_address,omitzero"`
+	AggregatorID       uint16           `json:"aggregator_id,omitzero"`
+	NumberOfPorts      uint8            `json:"number_of_ports,omitzero"`
+	Diagnose           DiagnoseStatus   `json:"diagnose,omitzero"`
+	DiagnoseDetail     string           `json:"diagnose_detail,omitzero"`
+	SlaveInterfaces    []SlaveInterface `json:"slave_interfaces,omitzero"`
 
 	// Index for O(1) slave lookup
 	slaveIdx map[string]*SlaveInterface `json:"-"`
@@ -210,14 +162,14 @@ func (d *DiagnoseStatus) UnmarshalJSON(data []byte) error {
 
 // SlaveInterface represents a bond slave (member) interface.
 type SlaveInterface struct {
-	SlaveName     string `json:"slave_name,omitempty"`
-	MIIStatus     string `json:"mii_status,omitempty"`
-	Duplex        string `json:"duplex,omitempty"`
-	Speed         uint64 `json:"speed,omitempty"` // Mbps
-	LinkFailCount uint32 `json:"link_fail_count,omitempty"`
-	MACAddress    string `json:"mac_address,omitempty"`
-	SlaveQueueID  uint16 `json:"slave_queue_id,omitempty"`
-	AggregatorID  uint16 `json:"aggregator_id,omitempty"`
+	SlaveName     string `json:"slave_name,omitzero"`
+	MIIStatus     string `json:"mii_status,omitzero"`
+	Duplex        string `json:"duplex,omitzero"`
+	Speed         uint64 `json:"speed,omitzero"` // Mbps
+	LinkFailCount uint32 `json:"link_fail_count,omitzero"`
+	MACAddress    string `json:"mac_address,omitzero"`
+	SlaveQueueID  uint16 `json:"slave_queue_id,omitzero"`
+	AggregatorID  uint16 `json:"aggregator_id,omitzero"`
 }
 
 // Constructor and Initialization
