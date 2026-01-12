@@ -11,29 +11,29 @@ import (
 
 const ethtool = "/usr/sbin/ethtool"
 
+func applyFieldMapping(source map[string]string, target map[string]*string) {
+	for key, ptr := range target {
+		if *ptr == "" {
+			if val, ok := source[key]; ok {
+				*ptr = val
+			}
+		}
+	}
+}
+
 func (nf *NetInterface) collectEthtoolSetting(eth string) error {
 	output := execute.Command(ethtool, eth)
 	if output.AsError() != nil {
 		return output.Err
 	}
 
-	ethMap := utils.ParseKeyValue(string(output.Stdout), ":")
-	fiedlMap := map[string]*string{
-		"Speed":         &nf.Speed,
-		"Duplex":        &nf.Duplex,
-		"Link detected": &nf.LinkDetected,
-		"Port":          &nf.Port,
-	}
-
-	for k, v := range fiedlMap {
-		if *v != "" {
-			continue
-		}
-
-		if val, ok := ethMap[k]; ok {
-			*v = val
-		}
-	}
+	applyFieldMapping(utils.ParseKeyValue(string(output.Stdout), ":"),
+		map[string]*string{
+			"Speed":         &nf.Speed,
+			"Duplex":        &nf.Duplex,
+			"Link detected": &nf.LinkDetected,
+			"Port":          &nf.Port,
+		})
 
 	return nil
 }
@@ -44,24 +44,56 @@ func (nf *NetInterface) collectEthtoolDriver(eth string) error {
 		return output.Err
 	}
 
-	ethMap := utils.ParseKeyValue(string(output.Stdout), ":")
-	fiedlMap := map[string]*string{
-		"driver":           &nf.Driver,
-		"version":          &nf.DriverVersion,
-		"firmware-version": &nf.FirmwareVersion,
-	}
+	applyFieldMapping(utils.ParseKeyValue(string(output.Stdout), ":"),
+		map[string]*string{
+			"driver":           &nf.Driver,
+			"version":          &nf.DriverVersion,
+			"firmware-version": &nf.FirmwareVersion,
+		})
 
-	for k, v := range fiedlMap {
-		if *v != "" {
+	return nil
+}
+
+type parseSection int
+
+const (
+	sectionPreset parseSection = iota
+	sectionCurrent
+)
+
+type sectionFieldSetter struct {
+	maxSetter     func(value string)
+	currentSetter func(value string)
+}
+
+func applySectionFieldMapping(data []byte, source map[string]sectionFieldSetter) {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	section := sectionPreset
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.HasPrefix(line, "Pre-set maximums"):
+			section = sectionPreset
+			continue
+		case strings.HasPrefix(line, "Current hardware settings"):
+			section = sectionCurrent
 			continue
 		}
 
-		if val, ok := ethMap[k]; ok {
-			*v = val
+		key, value, ok := utils.ParseLineKeyValue(line, ":")
+		if !ok {
+			continue
+		}
+
+		if setter, ok := source[key]; ok {
+			switch section {
+			case sectionPreset:
+				setter.maxSetter(value)
+			case sectionCurrent:
+				setter.currentSetter(value)
+			}
 		}
 	}
-
-	return nil
 }
 
 func collectEthtoolRingBuffer(nic string) RingBuffer {
@@ -70,38 +102,18 @@ func collectEthtoolRingBuffer(nic string) RingBuffer {
 		return RingBuffer{}
 	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(output.Stdout))
-	res := RingBuffer{}
-	flag := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "Current") {
-			flag = true
-			continue
-		}
+	var res RingBuffer
 
-		if idx := strings.Index(line, ":"); idx > 0 {
-			key := strings.TrimSpace(line[:idx])
-			value := strings.TrimSpace(line[idx+1:])
-
-			if flag {
-				switch key {
-				case "RX":
-					res.CurrentRX = value
-				case "TX":
-					res.CurrentTX = value
-				}
-			}
-
-			switch key {
-			case "RX":
-				res.MaxRX = value
-			case "TX":
-				res.MaxTX = value
-			}
-		}
-
-	}
+	applySectionFieldMapping(output.Stdout, map[string]sectionFieldSetter{
+		"RX": {
+			maxSetter:     func(value string) { res.MaxRX = value },
+			currentSetter: func(value string) { res.CurrentRX = value },
+		},
+		"TX": {
+			maxSetter:     func(value string) { res.MaxTX = value },
+			currentSetter: func(value string) { res.CurrentTX = value },
+		},
+	})
 
 	return res
 }
@@ -112,41 +124,24 @@ func collectEthtoolChannel(nic string) Channel {
 		return Channel{}
 	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(output.Stdout))
-	res := Channel{}
-	flag := false
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "Current") {
-			flag = true
-			continue
-		}
-
-		if idx := strings.Index(line, ":"); idx > 0 {
-			key := strings.TrimSpace(line[:idx])
-			value := strings.TrimSpace(line[idx+1:])
-
-			if flag {
-				switch key {
-				case "RX":
-					res.CurrentRX = value
-				case "TX":
-					res.CurrentTX = value
-				case "Combined":
-					res.CurrentCombined = value
-				}
-			}
-			switch key {
-			case "RX":
-				res.MaxRX = value
-			case "TX":
-				res.MaxTX = value
-			case "Combined":
-				res.MaxCombined = value
-			}
-		}
-	}
+	var res Channel
+	applySectionFieldMapping(
+		output.Stdout,
+		map[string]sectionFieldSetter{
+			"Rx": {
+				maxSetter:     func(v string) { res.MaxRX = v },
+				currentSetter: func(v string) { res.CurrentRX = v },
+			},
+			"Tx": {
+				maxSetter:     func(v string) { res.MaxTX = v },
+				currentSetter: func(v string) { res.CurrentTX = v },
+			},
+			"Combined": {
+				maxSetter:     func(v string) { res.MaxCombined = v },
+				currentSetter: func(v string) { res.CurrentCombined = v },
+			},
+		},
+	)
 
 	return res
 }

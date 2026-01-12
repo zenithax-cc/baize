@@ -1,25 +1,22 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"net"
+
+	"github.com/zenithax-cc/baize/internal/collector/network"
 )
 
 func main() {
-	nf, err := net.Interfaces()
+	n, err := network.CollectNetInterfaces()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("network: %v", err)
 	}
 
-	for _, n := range nf {
-		ipNet, err := n.Addrs()
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		for _, addr := range ipNet {
-			fmt.Println(addr.String())
-		}
+	js, err := json.MarshalIndent(n, "", " ")
+	if err != nil {
+		fmt.Printf("marshl json: %v", err)
 	}
 
+	fmt.Println(string(js))
 }

@@ -12,23 +12,20 @@ import (
 
 const sysfsNet string = "/sys/class/net"
 
-func collectNetInterfaces() ([]NetInterface, error) {
+func CollectNetInterfaces() ([]NetInterface, error) {
 	dirs, err := os.ReadDir(sysfsNet)
 	if err != nil {
 		return nil, fmt.Errorf("read directory %s failed: %w", sysfsNet, err)
 	}
 
-	netInterfaces := make([]NetInterface, len(dirs))
+	netInterfaces := make([]NetInterface, 0, len(dirs))
 	for _, dir := range dirs {
-		if !dir.IsDir() {
-			continue
-		}
 
 		dirName := dir.Name()
 		if strings.HasPrefix(dirName, "lo") || strings.HasPrefix(dirName, "loop") {
 			continue
 		}
-
+		println("ll")
 		netInterfaces = append(netInterfaces, collectNetInterface(dirName))
 	}
 
@@ -48,13 +45,14 @@ func collectNetInterface(name string) NetInterface {
 		"operstate": &res.Status,
 	}
 
-	for name, ptr := range feildMap {
-		filePath := filepath.Join(sysfsNet, name)
+	for f, ptr := range feildMap {
+		filePath := filepath.Join(sysfsNet, name, f)
 		if content, err := utils.ReadOneLineFile(filePath); err == nil {
 			*ptr = content
 		}
 	}
 
+	println("ip")
 	go res.collectEthtoolDriver(name)
 	go res.collectEthtoolSetting(name)
 
@@ -75,7 +73,7 @@ func getIPv4(name string) ([]IPv4Address, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := make([]IPv4Address, len(addrs))
+	res := make([]IPv4Address, 0, len(addrs))
 	for _, addr := range addrs {
 		ipNet, ok := addr.(*net.IPNet)
 		if !ok || ipNet.IP.To4() == nil {

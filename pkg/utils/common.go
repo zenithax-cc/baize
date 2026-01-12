@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -27,6 +28,16 @@ func ParseKeyValue(text string, sep string) map[string]string {
 
 	}
 	return result
+}
+
+// ParseLineKeyValue parses a line into a key-value pair.
+func ParseLineKeyValue(line, sep string) (string, string, bool) {
+	idx := strings.Index(line, sep)
+	if idx <= 0 {
+		return "", "", false
+	}
+
+	return strings.TrimSpace(line[:idx]), strings.TrimSpace(line[idx+1:]), true
 }
 
 // FileExists checks if the file exists and is a regular file
@@ -93,4 +104,26 @@ func ReadOneLineFile(path string) (string, error) {
 
 func ReadLines(path string) ([]string, error) {
 	return ReadLinesOffsetN(path, 0, -1)
+}
+
+func CombineErrors(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+
+	validErrors := make([]error, 0, len(errs))
+	for _, err := range errs {
+		if err != nil {
+			validErrors = append(validErrors, err)
+		}
+	}
+
+	switch len(validErrors) {
+	case 0:
+		return nil
+	case 1:
+		return validErrors[0]
+	default:
+		return errors.Join(validErrors...)
+	}
 }
