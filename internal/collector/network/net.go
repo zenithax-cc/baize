@@ -6,11 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/zenithax-cc/baize/pkg/utils"
 )
 
 const sysfsNet string = "/sys/class/net"
+
+var skipTarget = []string{"lo", "loop"}
 
 func CollectNetInterfaces() ([]NetInterface, error) {
 	dirs, err := os.ReadDir(sysfsNet)
@@ -20,13 +23,12 @@ func CollectNetInterfaces() ([]NetInterface, error) {
 
 	netInterfaces := make([]NetInterface, 0, len(dirs))
 	for _, dir := range dirs {
-
-		dirName := dir.Name()
-		if strings.HasPrefix(dirName, "lo") || strings.HasPrefix(dirName, "loop") {
+		itfName := dir.Name()
+		if utils.HasPrefix(itfName, skipTarget) {
 			continue
 		}
-		println("ll")
-		netInterfaces = append(netInterfaces, collectNetInterface(dirName))
+
+		netInterfaces = append(netInterfaces, collectNetInterface(itfName))
 	}
 
 	return netInterfaces, nil
@@ -37,7 +39,7 @@ func collectNetInterface(name string) NetInterface {
 		DeviceName: name,
 	}
 
-	feildMap := map[string]*string{
+	fieldMap := map[string]*string{
 		"address":   &res.MACAddress,
 		"mtu":       &res.MTU,
 		"duplex":    &res.Duplex,
@@ -45,16 +47,27 @@ func collectNetInterface(name string) NetInterface {
 		"operstate": &res.Status,
 	}
 
-	for f, ptr := range feildMap {
+	for f, ptr := range fieldMap {
 		filePath := filepath.Join(sysfsNet, name, f)
 		if content, err := utils.ReadOneLineFile(filePath); err == nil {
 			*ptr = content
 		}
 	}
 
-	println("ip")
-	go res.collectEthtoolDriver(name)
-	go res.collectEthtoolSetting(name)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		res.collectEthtoolDriver(name)
+	}()
+
+	go func() {
+		defer wg.Done()
+		res.collectEthtoolSetting(name)
+	}()
+
+	wg.Wait()
 
 	if strings.ToLower(res.Status) == "up" {
 		res.IPv4, _ = getIPv4(name)
@@ -110,6 +123,9 @@ func calGateway(ip net.IP, mask net.IPMask) string {
 		gateway[i] = ip[i] & mask[i]
 	}
 
+	if gateway[3] == 255 {
+		return ""
+	}
 	gateway[3]++
 
 	return gateway.String()

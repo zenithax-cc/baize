@@ -127,3 +127,17 @@ func CombineErrors(errs []error) error {
 		return errors.Join(validErrors...)
 	}
 }
+
+func HasPrefix(str string, taget []string) bool {
+	if len(taget) == 0 {
+		return false
+	}
+
+	for _, prefix := range taget {
+		if strings.HasPrefix(str, prefix) {
+			return true
+		}
+	}
+
+	return false
+}

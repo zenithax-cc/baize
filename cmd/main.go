@@ -8,7 +8,9 @@ import (
 )
 
 func main() {
-	n, err := network.CollectNetInterfaces()
+	n := network.New()
+
+	err := n.Collect()
 	if err != nil {
 		fmt.Printf("network: %v", err)
 	}

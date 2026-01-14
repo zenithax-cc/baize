@@ -14,12 +14,18 @@ func collectNic() ([]PhyInterface, error) {
 	}
 
 	phyInterfaces := make([]PhyInterface, len(nics))
-
 	for _, nic := range nics {
-		phyInterfaces = append(phyInterfaces, PhyInterface{
+		itf := PhyInterface{
 			DeviceName: nicName(nic),
 			PCI:        *pci.New(nic),
-		})
+		}
+
+		if itf.DeviceName != "unknown" {
+			lldp, _ := lldpNeighbors(itf.DeviceName)
+			itf.LLDP = lldp
+			itf.RingBuffer = collectEthtoolRingBuffer(itf.DeviceName)
+			itf.Channel = collectEthtoolChannel(itf.DeviceName)
+		}
 	}
 
 	return phyInterfaces, nil

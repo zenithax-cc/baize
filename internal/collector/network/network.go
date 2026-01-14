@@ -1,5 +1,7 @@
 package network
 
+import "github.com/zenithax-cc/baize/pkg/utils"
+
 func New() *Network {
 	return &Network{
 		PhyInterfaces:  make([]PhyInterface, 8),
@@ -22,5 +24,11 @@ func (n *Network) Collect() error {
 	}
 	n.NetInterfaces = nets
 
-	return nil
+	bonds, err := collectBondInterfaces()
+	if err != nil {
+		errs = append(errs, err)
+	}
+	n.BondInterfaces = bonds
+
+	return utils.CombineErrors(errs)
 }

@@ -94,12 +94,12 @@ type BondInterface struct {
 	BondMode           string           `json:"bond_mode,omitzero"`
 	TransmitHashPolicy string           `json:"transmit_hash_policy,omitzero"` // Fixed: lowercase 't'
 	MIIStatus          string           `json:"mii_status,omitzero"`
-	MIIPollingInterval uint32           `json:"mii_polling_interval,omitzero"` // Milliseconds
+	MIIPollingInterval string           `json:"mii_polling_interval,omitzero"` // Milliseconds
 	LACPRate           string           `json:"lacp_rate,omitzero"`
 	MACAddress         string           `json:"mac_address,omitzero"`
-	AggregatorID       uint16           `json:"aggregator_id,omitzero"`
-	NumberOfPorts      uint8            `json:"number_of_ports,omitzero"`
-	Diagnose           DiagnoseStatus   `json:"diagnose,omitzero"`
+	AggregatorID       string           `json:"aggregator_id,omitzero"`
+	NumberOfPorts      string           `json:"number_of_ports,omitzero"`
+	Diagnose           string           `json:"diagnose,omitzero"`
 	DiagnoseDetail     string           `json:"diagnose_detail,omitzero"`
 	SlaveInterfaces    []SlaveInterface `json:"slave_interfaces,omitzero"`
 
@@ -133,12 +133,10 @@ func (d DiagnoseStatus) String() string {
 
 // SlaveInterface represents a bond slave (member) interface.
 type SlaveInterface struct {
-	SlaveName     string `json:"slave_name,omitzero"`
-	MIIStatus     string `json:"mii_status,omitzero"`
-	Duplex        string `json:"duplex,omitzero"`
-	Speed         uint64 `json:"speed,omitzero"` // Mbps
-	LinkFailCount uint32 `json:"link_fail_count,omitzero"`
-	MACAddress    string `json:"mac_address,omitzero"`
-	SlaveQueueID  uint16 `json:"slave_queue_id,omitzero"`
-	AggregatorID  uint16 `json:"aggregator_id,omitzero"`
+	SlaveName        string `json:"slave_name,omitzero"`
+	MIIStatus        string `json:"mii_status,omitzero"`
+	State            string `json:"state,omitzero"`
+	LinkFailureCount string `json:"link_failure_count,omitzero"`
+	QueueID          string `json:"queue_id,omitzero"`
+	AggregatorID     string `json:"aggregator_id,omitzero"`
 }
