@@ -1,16 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/zenithax-cc/baize/internal/collector/network"
+	"github.com/zenithax-cc/baize/internal/collector/memory"
 )
 
 func main() {
-	n := network.New()
+	n := memory.New()
 
-	err := n.Collect()
+	err := n.Collect(context.Background())
 	if err != nil {
 		fmt.Printf("network: %v", err)
 	}

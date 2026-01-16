@@ -26,6 +26,8 @@ func collectNic() ([]PhyInterface, error) {
 			itf.RingBuffer = collectEthtoolRingBuffer(itf.DeviceName)
 			itf.Channel = collectEthtoolChannel(itf.DeviceName)
 		}
+
+		phyInterfaces = append(phyInterfaces, itf)
 	}
 
 	return phyInterfaces, nil

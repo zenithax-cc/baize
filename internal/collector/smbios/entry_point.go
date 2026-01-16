@@ -135,7 +135,7 @@ func (e *entryPoint32) UnmarshalBinary(data []byte) error {
 		return fmt.Errorf("%w: intermediate anchor %q", ErrInvalidAnchor, e.IntermediateAnchorString[:])
 	}
 
-	intermediateRegion := data[intermediateRegionStart : intermediateRegionEnd+1]
+	intermediateRegion := data[intermediateRegionStart:intermediateRegionEnd]
 	if e.IntermediateChecksum != calChecksum(intermediateRegion, IntermediateChecksumOffset) {
 		return fmt.Errorf("%w: intermediate checksum mismatch", ErrInvalidChecksum)
 	}
