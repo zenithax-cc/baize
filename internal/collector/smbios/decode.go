@@ -35,7 +35,16 @@ type Decoder struct {
 	mu         sync.RWMutex
 }
 
+var decodeOnce sync.Once
+
 func New(ctx context.Context) (*Decoder, error) {
+	var d *Decoder
+	var err error
+	decodeOnce.Do(func() { d, err = getDecoder(ctx) })
+	return d, err
+}
+
+func getDecoder(ctx context.Context) (*Decoder, error) {
 	d := &Decoder{
 		tables:  make(map[TableType][]*Table, len(parsers)),
 		parsers: maps.Clone(parsers),

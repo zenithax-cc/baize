@@ -130,8 +130,10 @@ func ReadLinesOffsetN(path string, offset, n int64) ([]string, error) {
 
 func ReadOneLineFile(path string) (string, error) {
 	lines, err := ReadLinesOffsetN(path, 0, 1)
-
-	return strings.TrimSpace(lines[0]), err
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(lines[0]), nil
 }
 
 func ReadLines(path string) ([]string, error) {
@@ -172,4 +174,40 @@ func HasPrefix(str string, taget []string) bool {
 	}
 
 	return false
+}
+
+func FillField(s string, t *string) {
+	if s == "" || *t != "" {
+		return
+	}
+
+	*t = s
+}
+
+const (
+	_         = iota
+	KB uint64 = 1 << (iota * 10)
+	MB
+	GB
+	TB
+)
+
+var sizeFormat = []struct {
+	unit   uint64
+	suffix string
+}{
+	{KB, "KB"},
+	{MB, "MB"},
+	{GB, "GB"},
+	{TB, "TB"},
+}
+
+func KGMT(v uint64) string {
+	for _, f := range sizeFormat {
+		if v >= f.unit && v%(f.unit) == 0 {
+			return fmt.Sprintf("%d %s", v/f.unit, f.suffix)
+		}
+	}
+
+	return fmt.Sprintf("%d B", v)
 }

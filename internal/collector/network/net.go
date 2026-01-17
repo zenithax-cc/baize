@@ -13,7 +13,7 @@ import (
 
 const sysfsNet string = "/sys/class/net"
 
-var skipTarget = []string{"lo", "loop"}
+var skipTarget = []string{"lo", "loop", "bonding_master"}
 
 func CollectNetInterfaces() ([]NetInterface, error) {
 	dirs, err := os.ReadDir(sysfsNet)
