@@ -69,7 +69,8 @@ func collectNetInterface(name string) NetInterface {
 
 	wg.Wait()
 
-	if strings.ToLower(res.Status) == "up" {
+	bondSlave := filepath.Join(sysfsNet, name, "bonding_slave")
+	if strings.ToLower(res.Status) == "up" && !utils.PathExists(bondSlave) {
 		res.IPv4, _ = getIPv4(name)
 	}
 
@@ -117,16 +118,16 @@ func calGateway(ip net.IP, mask net.IPMask) string {
 		return ""
 	}
 
-	gateway := make(net.IP, len(ip.To4()))
-
-	for i := 0; i < 4; i++ {
-		gateway[i] = ip[i] & mask[i]
-	}
-
-	if gateway[3] == 255 {
+	if ip[3]&mask[3] == 255 {
 		return ""
 	}
-	gateway[3]++
+
+	gateway := net.IP{
+		ip[0] & mask[0],
+		ip[1] & mask[1],
+		ip[2] & mask[2],
+		(ip[3] & mask[3]) + 1,
+	}
 
 	return gateway.String()
 }

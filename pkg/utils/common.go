@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -30,6 +31,28 @@ func ParseKeyValue(text string, sep string) map[string]string {
 	return result
 }
 
+func ParseKeyValueFromBytes(data []byte, sep string, res map[string]*string) error {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		key, value, ok := strings.Cut(line, sep)
+		if !ok {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+
+		if ptr, exists := res[key]; exists && *ptr == "" {
+			*ptr = value
+		}
+	}
+
+	return scanner.Err()
+}
+
 // ParseLineKeyValue parses a line into a key-value pair.
 func ParseLineKeyValue(line, sep string) (string, string, bool) {
 	idx := strings.Index(line, sep)
@@ -47,6 +70,15 @@ func FileExists(path string) bool {
 	}
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+func PathExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+
+	return err == nil || os.IsExist(err)
 }
 
 func ReadLinesOffsetN(path string, offset, n int64) ([]string, error) {

@@ -10,17 +10,17 @@ import (
 
 const lldpctl = "/usr/sbin/lldpctl"
 
-var lldpFields = map[string]func(*LLDP, string){
-	"chassis.mac":      func(l *LLDP, v string) { l.ToRAddress = v },
-	"chassis.name":     func(l *LLDP, v string) { l.ToRName = v },
-	"chassis.mgmt-ip":  func(l *LLDP, v string) { l.ManagementIP = v },
-	"port.ifname":      func(l *LLDP, v string) { l.Interface = v },
-	"port.aggregation": func(l *LLDP, v string) { l.PortAggregation = v },
-	"vlan.vlan-id":     func(l *LLDP, v string) { l.VLAN = v },
-	"vlan.pvid":        func(l *LLDP, v string) { l.PPVID = v },
-	"ppvid.support":    func(l *LLDP, v string) { l.PPVIDSupport = v },
-	"ppvid.enabled":    func(l *LLDP, v string) { l.PPVIDEnabled = v },
-}
+const (
+	fieldChassisMac      = "chassis.mac"
+	fieldChassisName     = "chassis.name"
+	fieldChassisMgmtIP   = "chassis.mgmt-ip"
+	fieldPortIfname      = "port.ifname"
+	fieldPortAggregation = "port.aggregation"
+	fieldVlanID          = "vlan.vlan-id"
+	fieldVlanPvid        = "vlan.pvid"
+	fieldPpvidSupport    = "ppvid.support"
+	fieldPpvidEnabled    = "ppvid.enabled"
+)
 
 func lldpNeighbors(nic string) (LLDP, error) {
 	output := execute.Command(lldpctl, nic, "-f", "keyvalue")
@@ -28,24 +28,31 @@ func lldpNeighbors(nic string) (LLDP, error) {
 		return LLDP{}, output.Err
 	}
 
-	prefix := "lldp." + nic + "."
+	var prefixBuilder strings.Builder
+	prefixBuilder.Grow(7 + len(nic))
+	prefixBuilder.WriteString("lldp.")
+	prefixBuilder.WriteString(nic)
+	prefixBuilder.WriteByte('.')
+	prefix := prefixBuilder.String()
+	prefixLen := len(prefix)
+
 	scanner := bufio.NewScanner(bytes.NewReader(output.Stdout))
-	res := LLDP{}
+	var res LLDP
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		if !strings.Contains(line, "=") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
 			res.ToRDesc = line
 			continue
 		}
 
-		line = strings.TrimPrefix(line, prefix)
-		if idx := strings.Index(line, "="); idx > 0 {
-			key := strings.TrimSpace(line[:idx])
-			value := strings.TrimSpace(line[idx+1:])
-			if f, ok := lldpFields[key]; ok {
-				f(&res, value)
-			}
+		if len(key) > prefixLen && key[:prefixLen] == prefix {
+			key = key[prefixLen:]
 		}
+
+		setLLDPField(&res, strings.TrimSpace(key), strings.TrimSpace(value))
+
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -53,4 +60,27 @@ func lldpNeighbors(nic string) (LLDP, error) {
 	}
 
 	return res, nil
+}
+
+func setLLDPField(l *LLDP, key, value string) {
+	switch key {
+	case fieldChassisMac:
+		l.ToRAddress = value
+	case fieldChassisName:
+		l.ToRName = value
+	case fieldChassisMgmtIP:
+		l.ManagementIP = value
+	case fieldPortIfname:
+		l.Interface = value
+	case fieldPortAggregation:
+		l.PortAggregation = value
+	case fieldVlanID:
+		l.VLAN = value
+	case fieldVlanPvid:
+		l.PPVID = value
+	case fieldPpvidSupport:
+		l.PPVIDSupport = value
+	case fieldPpvidEnabled:
+		l.PPVIDEnabled = value
+	}
 }

@@ -107,30 +107,6 @@ type BondInterface struct {
 	slaveIdx map[string]*SlaveInterface `json:"-"`
 }
 
-// DiagnoseStatus represents bond health diagnosis result
-type DiagnoseStatus uint8
-
-const (
-	DiagnoseOK DiagnoseStatus = iota
-	DiagnoseWarning
-	DiagnoseError
-	DiagnoseUnknown
-)
-
-// String returns human-readable diagnosis status
-func (d DiagnoseStatus) String() string {
-	switch d {
-	case DiagnoseOK:
-		return "ok"
-	case DiagnoseWarning:
-		return "warning"
-	case DiagnoseError:
-		return "error"
-	default:
-		return "unknown"
-	}
-}
-
 // SlaveInterface represents a bond slave (member) interface.
 type SlaveInterface struct {
 	SlaveName        string `json:"slave_name,omitzero"`
