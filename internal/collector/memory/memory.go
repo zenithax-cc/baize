@@ -7,10 +7,13 @@ import (
 )
 
 func New() *Memory {
-	return &Memory{}
+	return &Memory{
+		PhysicalMemoryEntries: make([]*SmbiosMemory, 0, 32),
+		EdacMemoryEntries:     make([]*EdacMemory, 0, 32),
+	}
 }
 
-func (m Memory) Collect(ctx context.Context) error {
+func (m *Memory) Collect(ctx context.Context) error {
 	var errs []error
 	phyMemory, err := collectPhysicalMemory(ctx)
 	if err != nil {

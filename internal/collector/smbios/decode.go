@@ -128,10 +128,10 @@ var sizeFormat = []struct {
 	unit   uint64
 	suffix string
 }{
-	{KB, "KB"},
-	{MB, "MB"},
-	{GB, "GB"},
 	{TB, "TB"},
+	{GB, "GB"},
+	{MB, "MB"},
+	{KB, "KB"},
 }
 
 func kgmt(v uint64) string {

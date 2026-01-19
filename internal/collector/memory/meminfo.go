@@ -2,6 +2,7 @@ package memory
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -70,10 +71,11 @@ func convertUnit(value string) string {
 		return value
 	}
 
-	numUint, err := strconv.ParseUint(num, 10, 64)
+	numUint, err := strconv.ParseFloat(num, 64)
 	if err != nil {
+		fmt.Printf("meminfo parseuint: %v", err)
 		return value
 	}
 
-	return utils.KGMT(numUint)
+	return utils.KGMT(numUint * 1024)
 }
