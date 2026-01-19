@@ -6,9 +6,12 @@ import (
 	"fmt"
 
 	"github.com/zenithax-cc/baize/internal/collector/memory"
+	"github.com/zenithax-cc/baize/pkg/utils"
 )
 
 func main() {
+
+	println(utils.KGMT(2099))
 	n := memory.New()
 
 	err := n.Collect(context.Background())
