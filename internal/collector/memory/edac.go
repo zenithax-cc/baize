@@ -57,12 +57,12 @@ func parseDimmDir(dimmDir string) (*EdacMemory, error) {
 	for _, field := range fields {
 		filePath := filepath.Join(dimmDir, field.name)
 		if content, err := os.ReadFile(filePath); err == nil {
-			utils.FillField(string(content), field.value)
+			utils.FillField(strings.TrimSpace(string(content)), field.value)
 		}
 	}
 
 	if content, err := os.ReadFile(filepath.Join(dimmDir, "dimm_label")); err == nil {
-		parseDimmLabel(dimm, string(content))
+		parseDimmLabel(dimm, strings.TrimSpace(string(content)))
 	}
 
 	return dimm, nil
@@ -75,18 +75,17 @@ func parseDimmLabel(dimm *EdacMemory, content string) {
 	}
 
 	for _, part := range parts {
-		key, value, ok := strings.Cut(part, "=")
+		key, value, ok := strings.Cut(part, "#")
 		if !ok {
 			continue
 		}
 
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
-
 		switch key {
 		case "SrcID":
 			utils.FillField(value, &dimm.SocketID)
-		case "Ha":
+		case "Ha", "MC":
 			utils.FillField(value, &dimm.MemoryControllerID)
 		case "Chan":
 			utils.FillField(value, &dimm.ChannelID)

@@ -13,7 +13,7 @@ func collectPhysicalMemory(ctx context.Context) ([]*SmbiosMemory, error) {
 		return nil, err
 	}
 
-	memoryTables, err := smbios.GetTypeData[smbios.Type17MemoryDevice](d, 17)
+	memoryTables, err := smbios.GetTypeData[*smbios.Type17MemoryDevice](d, 17)
 	if err != nil {
 		return nil, err
 	}

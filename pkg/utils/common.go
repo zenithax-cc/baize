@@ -185,29 +185,29 @@ func FillField(s string, t *string) {
 }
 
 const (
-	_         = iota
-	KB uint64 = 1 << (iota * 10)
+	_          = iota
+	KB float64 = 1 << (iota * 10)
 	MB
 	GB
 	TB
 )
 
 var sizeFormat = []struct {
-	unit   uint64
+	unit   float64
 	suffix string
 }{
-	{KB, "KB"},
-	{MB, "MB"},
-	{GB, "GB"},
 	{TB, "TB"},
+	{GB, "GB"},
+	{MB, "MB"},
+	{KB, "KB"},
 }
 
-func KGMT(v uint64) string {
+func KGMT(v float64) string {
 	for _, f := range sizeFormat {
-		if v >= f.unit && v%(f.unit) == 0 {
-			return fmt.Sprintf("%d %s", v/f.unit, f.suffix)
+		if v >= f.unit {
+			return fmt.Sprintf("%0.2f %s", v/f.unit, f.suffix)
 		}
 	}
 
-	return fmt.Sprintf("%d B", v)
+	return fmt.Sprintf("%f B", v)
 }
