@@ -1,35 +1,27 @@
 package cpu
 
 type LscpuInfo struct {
-	Architecture     string   `json:"architecture,omitempty"`
-	CPUOpMode        string   `json:"cpu_op_mode,omitempty"`
-	AddressSizes     string   `json:"address_sizes,omitempty"`
-	ByteOrder        string   `json:"byte_order,omitempty"`
-	CPUs             string   `json:"cpus,omitempty"`
-	OnlineCPUs       string   `json:"online_cpus,omitempty"`
-	VendorID         string   `json:"vendor_id,omitempty"`
-	ModelName        string   `json:"model_name,omitempty"`
-	CPUFamily        string   `json:"cpu_family,omitempty"`
-	CPUModel         string   `json:"cpu_model,omitempty"`
-	ThreadsPerCore   string   `json:"threads_per_core,omitempty"`
-	CoresPerSocket   string   `json:"cores_per_socket,omitempty"`
-	Sockets          string   `json:"sockets,omitempty"`
-	Stepping         string   `json:"stepping,omitempty"`
-	BogoMIPS         string   `json:"bogomips,omitempty"`
-	Virtualization   string   `json:"virtualization,omitempty"`
-	L1dCache         string   `json:"l1d_cache,omitempty"`
-	L1iCache         string   `json:"l1i_cache,omitempty"`
-	L2Cache          string   `json:"l2_cache,omitempty"`
-	L3Cache          string   `json:"l3_cache,omitempty"`
-	MaximumFrequency string   `json:"maximum_frequency,omitempty"`
-	MinimumFrequency string   `json:"minimum_frequency,omitempty"`
-	PowerState       string   `json:"power_state,omitempty"`
-	HyperThreading   string   `json:"hyper_threading,omitempty"`
-	Temperature      string   `json:"temperature,omitempty"`
-	Wattage          string   `json:"wattage,omitempty"`
-	Diagnose         string   `json:"diagnose,omitempty"`
-	DiagnoseDetail   string   `json:"diagnose_detail,omitempty"`
-	Flags            []string `json:"flags,omitempty"`
+	Architecture   string   `json:"architecture,omitempty"`
+	CPUOpMode      string   `json:"cpu_op_mode,omitempty"`
+	AddressSizes   string   `json:"address_sizes,omitempty"`
+	ByteOrder      string   `json:"byte_order,omitempty"`
+	CPUs           string   `json:"cpus,omitempty"`
+	OnlineCPUs     string   `json:"online_cpus,omitempty"`
+	VendorID       string   `json:"vendor_id,omitempty"`
+	ModelName      string   `json:"model_name,omitempty"`
+	CPUFamily      string   `json:"cpu_family,omitempty"`
+	CPUModel       string   `json:"cpu_model,omitempty"`
+	ThreadsPerCore string   `json:"threads_per_core,omitempty"`
+	CoresPerSocket string   `json:"cores_per_socket,omitempty"`
+	Sockets        string   `json:"sockets,omitempty"`
+	Stepping       string   `json:"stepping,omitempty"`
+	BogoMIPS       string   `json:"bogomips,omitempty"`
+	Virtualization string   `json:"virtualization,omitempty"`
+	L1dCache       string   `json:"l1d_cache,omitempty"`
+	L1iCache       string   `json:"l1i_cache,omitempty"`
+	L2Cache        string   `json:"l2_cache,omitempty"`
+	L3Cache        string   `json:"l3_cache,omitempty"`
+	Flags          []string `json:"flags,omitempty"`
 }
 
 type SmbiosCPU struct {
@@ -59,5 +51,13 @@ type ThreadEntry struct {
 
 type CPU struct {
 	LscpuInfo
-	PhysicalCPU []*SmbiosCPU `json:"physical_cpu,omitempty"`
+	MaxFreqMHz     int          `json:"max_freq_mhz,omitempty"`
+	MinFreqMHz     int          `json:"min_freq_mhz,omitempty"`
+	PowerState     string       `json:"power_state,omitempty"`
+	HyperThreading string       `json:"hyper_threading,omitempty"`
+	Temperature    string       `json:"temperature,omitempty"`
+	Wattage        string       `json:"wattage,omitempty"`
+	Diagnose       string       `json:"diagnose,omitempty"`
+	DiagnoseDetail string       `json:"diagnose_detail,omitempty"`
+	PhysicalCPU    []*SmbiosCPU `json:"physical_cpu,omitempty"`
 }

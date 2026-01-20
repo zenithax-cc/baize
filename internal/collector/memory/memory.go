@@ -8,8 +8,12 @@ import (
 
 func New() *Memory {
 	return &Memory{
-		PhysicalMemoryEntries: make([]*SmbiosMemory, 0, 32),
-		EdacMemoryEntries:     make([]*EdacMemory, 0, 32),
+		SmbiosMemory: SmbiosMemory{
+			PhysicalMemoryEntries: make([]*SmbiosMemoryEntry, 0, 32),
+		},
+		EdacMemory: EdacMemory{
+			EdacMemoryEntries: make([]*EdacMemoryEntry, 0, 32),
+		},
 	}
 }
 

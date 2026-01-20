@@ -11,7 +11,7 @@ import (
 
 const edacPath = "/sys/devices/system/edac/mc/"
 
-func collectEdacMemory(ctx context.Context) ([]*EdacMemory, error) {
+func collectEdacMemory(ctx context.Context) ([]*EdacMemoryEntry, error) {
 	if _, err := os.Stat(edacPath); err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -24,7 +24,7 @@ func collectEdacMemory(ctx context.Context) ([]*EdacMemory, error) {
 		return nil, err
 	}
 
-	edacMemories := make([]*EdacMemory, 0, len(dimmDirs))
+	edacMemories := make([]*EdacMemoryEntry, 0, len(dimmDirs))
 	for _, dimmDir := range dimmDirs {
 		dimm, err := parseDimmDir(dimmDir)
 		if err != nil {
@@ -36,8 +36,8 @@ func collectEdacMemory(ctx context.Context) ([]*EdacMemory, error) {
 	return edacMemories, nil
 }
 
-func parseDimmDir(dimmDir string) (*EdacMemory, error) {
-	dimm := &EdacMemory{
+func parseDimmDir(dimmDir string) (*EdacMemoryEntry, error) {
+	dimm := &EdacMemoryEntry{
 		DIMMID: filepath.Base(dimmDir),
 	}
 
@@ -68,7 +68,7 @@ func parseDimmDir(dimmDir string) (*EdacMemory, error) {
 	return dimm, nil
 }
 
-func parseDimmLabel(dimm *EdacMemory, content string) {
+func parseDimmLabel(dimm *EdacMemoryEntry, content string) {
 	parts := strings.Split(content, "_")
 	if len(parts) < 4 {
 		return

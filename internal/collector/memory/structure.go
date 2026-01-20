@@ -26,15 +26,9 @@ type MemoryInfo struct {
 	HPagesTotal  string `json:"huge_page_total,omitempty"`
 	HPageSize    string `json:"huge_page_size,omitempty"`
 	HugeTlb      string `json:"huge_tlb,omitempty"`
-
-	PhysicalMemoryTotal string `json:"physical_memory_total,omitempty"`
-	MaximumSlots        string `json:"maximum_slot,omitempty"`
-	UsedSlots           string `json:"used_slots,omitempty"`
-	Diagnose            string `json:"diagnose,omitempty"`
-	DiagnoseDetail      string `json:"diagnose_detail,omitempty"`
 }
 
-type SmbiosMemory struct {
+type SmbiosMemoryEntry struct {
 	BaseMemoryInfo
 	TotalWidth        string `json:"total_width,omitempty"`
 	DataWidth         string `json:"data_width,omitempty"`
@@ -51,7 +45,14 @@ type SmbiosMemory struct {
 	Technology        string `json:"technology,omitempty"`
 }
 
-type EdacMemory struct {
+type SmbiosMemory struct {
+	Maxslots              string               `json:"max_slots,omitempty"`
+	UsedSlots             string               `json:"used_slots,omitempty"`
+	PhysicalMemorySize    string               `json:"physical_memory__size,omitempty"`
+	PhysicalMemoryEntries []*SmbiosMemoryEntry `json:"physical_memory_entries,omitempty"`
+}
+
+type EdacMemoryEntry struct {
 	BaseMemoryInfo
 	CorrectableErrors   string `json:"correctable_errors,omitempty"`
 	UncorrectableErrors string `json:"uncorrectable_errors,omitempty"`
@@ -64,8 +65,16 @@ type EdacMemory struct {
 	DIMMID              string `json:"dimm_id,omitempty"`
 }
 
+type EdacMemory struct {
+	EdacSlots         string             `json:"slots,omitempty"`
+	EdacMemorySize    string             `json:"edac_memory_size,omitempty"`
+	EdacMemoryEntries []*EdacMemoryEntry `json:"edac_memory_entries,omitempty"`
+}
+
 type Memory struct {
 	MemoryInfo
-	PhysicalMemoryEntries []*SmbiosMemory `json:"physical_memory_entries,omitempty"`
-	EdacMemoryEntries     []*EdacMemory   `json:"edac_memory_entries,omitempty"`
+	Diagnose       string `json:"diagnose,omitempty"`
+	DiagnoseDetail string `json:"diagnose_detail,omitempty"`
+	SmbiosMemory
+	EdacMemory
 }

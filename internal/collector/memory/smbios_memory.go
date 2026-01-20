@@ -7,7 +7,7 @@ import (
 	"github.com/zenithax-cc/baize/internal/collector/smbios"
 )
 
-func collectPhysicalMemory(ctx context.Context) ([]*SmbiosMemory, error) {
+func collectPhysicalMemory(ctx context.Context) ([]*SmbiosMemoryEntry, error) {
 	d, err := smbios.New(ctx)
 	if err != nil {
 		return nil, err
@@ -43,14 +43,14 @@ func collectPhysicalMemory(ctx context.Context) ([]*SmbiosMemory, error) {
 		}
 	}
 
-	res := make([]*SmbiosMemory, 0, len(memoryTables))
+	res := make([]*SmbiosMemoryEntry, 0, len(memoryTables))
 	for _, t := range memoryTables {
 		speed := speedStr(t.Speed)
 		if speed == "Unknown" {
 			continue
 		}
 
-		mem := &SmbiosMemory{
+		mem := &SmbiosMemoryEntry{
 			BaseMemoryInfo: BaseMemoryInfo{
 				Size:         t.GetSizeString(),
 				SerialNumber: t.SerialNumber,
