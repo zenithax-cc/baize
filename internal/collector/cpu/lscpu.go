@@ -20,46 +20,46 @@ var (
 	}
 )
 
-type fieldSetter func(*LscpuInfo, string)
+type fieldSetter func(*SummaryCPU, string)
 
 var lscpuFieldSetters = map[string]fieldSetter{
-	"Architecture":   func(info *LscpuInfo, value string) { info.Architecture = value },
-	"Byte Order":     func(info *LscpuInfo, value string) { info.ByteOrder = value },
-	"Address sizes":  func(info *LscpuInfo, value string) { info.AddressSizes = value },
-	"CPU family":     func(info *LscpuInfo, value string) { info.CPUFamily = value },
-	"Model":          func(info *LscpuInfo, value string) { info.CPUModel = value },
-	"Model name":     func(info *LscpuInfo, value string) { info.ModelName = value },
-	"Stepping":       func(info *LscpuInfo, value string) { info.Stepping = value },
-	"BogoMIPS":       func(info *LscpuInfo, value string) { info.BogoMIPS = value },
-	"Virtualization": func(info *LscpuInfo, value string) { info.Virtualization = value },
-	"L1d cache":      func(info *LscpuInfo, value string) { info.L1dCache = value },
-	"L1i cache":      func(info *LscpuInfo, value string) { info.L1iCache = value },
-	"L2 cache":       func(info *LscpuInfo, value string) { info.L2Cache = value },
-	"L3 cache":       func(info *LscpuInfo, value string) { info.L3Cache = value },
+	"Architecture":   func(info *SummaryCPU, value string) { info.Architecture = value },
+	"Byte Order":     func(info *SummaryCPU, value string) { info.ByteOrder = value },
+	"Address sizes":  func(info *SummaryCPU, value string) { info.AddressSizes = value },
+	"CPU family":     func(info *SummaryCPU, value string) { info.CPUFamily = value },
+	"Model":          func(info *SummaryCPU, value string) { info.CPUModel = value },
+	"Model name":     func(info *SummaryCPU, value string) { info.ModelName = value },
+	"Stepping":       func(info *SummaryCPU, value string) { info.Stepping = value },
+	"BogoMIPS":       func(info *SummaryCPU, value string) { info.BogoMIPS = value },
+	"Virtualization": func(info *SummaryCPU, value string) { info.Virtualization = value },
+	"L1d cache":      func(info *SummaryCPU, value string) { info.L1dCache = value },
+	"L1i cache":      func(info *SummaryCPU, value string) { info.L1iCache = value },
+	"L2 cache":       func(info *SummaryCPU, value string) { info.L2Cache = value },
+	"L3 cache":       func(info *SummaryCPU, value string) { info.L3Cache = value },
 
-	"CPU(s)":              func(info *LscpuInfo, value string) { info.CPUs = value },
-	"On-line CPU(s) list": func(info *LscpuInfo, value string) { info.OnlineCPUs = value },
-	"Thread(s) per core":  func(info *LscpuInfo, value string) { info.ThreadsPerCore = value },
-	"Core(s) per socket":  func(info *LscpuInfo, value string) { info.CoresPerSocket = value },
-	"Socket(s)":           func(info *LscpuInfo, value string) { info.Sockets = value },
-	"Vendor ID": func(info *LscpuInfo, value string) {
+	"CPU(s)":              func(info *SummaryCPU, value string) { info.CPUs = value },
+	"On-line CPU(s) list": func(info *SummaryCPU, value string) { info.OnlineCPUs = value },
+	"Thread(s) per core":  func(info *SummaryCPU, value string) { info.ThreadsPerCore = value },
+	"Core(s) per socket":  func(info *SummaryCPU, value string) { info.CoresPerSocket = value },
+	"Socket(s)":           func(info *SummaryCPU, value string) { info.Sockets = value },
+	"Vendor ID": func(info *SummaryCPU, value string) {
 		if vendor, ok := vendorMap[value]; ok {
 			info.VendorID = vendor
 		} else {
 			info.VendorID = value
 		}
 	},
-	"CPU op-mode(s)": func(info *LscpuInfo, value string) { info.CPUOpMode = value },
-	"Flags":          func(info *LscpuInfo, value string) { info.Flags = strings.Fields(value) },
+	"CPU op-mode(s)": func(info *SummaryCPU, value string) { info.CPUOpMode = value },
+	"Flags":          func(info *SummaryCPU, value string) { info.Flags = strings.Fields(value) },
 }
 
-func collectLscpuInfo() (LscpuInfo, error) {
+func collectSummaryCPU() (SummaryCPU, error) {
 	output := execute.Command(lscpu)
 	if output.AsError() != nil {
-		return LscpuInfo{}, output.Err
+		return SummaryCPU{}, output.Err
 	}
 
-	res := LscpuInfo{}
+	res := SummaryCPU{}
 	scanner := bufio.NewScanner(bytes.NewReader(output.Stdout))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -76,5 +76,11 @@ func collectLscpuInfo() (LscpuInfo, error) {
 		}
 	}
 
-	return res, nil
+	if res.Architecture == "aarch64" {
+		res.HyperThreading = htNotSupported
+	} else if res.ThreadsPerCore == "1" {
+		res.HyperThreading = htSupportedDisabled
+	}
+
+	return res, scanner.Err()
 }
