@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/zenithax-cc/baize/internal/collector/memory"
+	"github.com/zenithax-cc/baize/internal/collector/cpu"
 )
 
 func main() {
-	n := memory.New()
+	n := cpu.New()
 
 	err := n.Collect(context.Background())
 	if err != nil {
-		fmt.Printf("network: %v", err)
+		fmt.Printf("cpu: %v", err)
 	}
 
 	js, err := json.MarshalIndent(n, "", " ")

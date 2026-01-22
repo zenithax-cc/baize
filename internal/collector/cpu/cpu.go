@@ -2,7 +2,8 @@ package cpu
 
 import (
 	"context"
-	"sync"
+
+	"github.com/zenithax-cc/baize/pkg/utils"
 )
 
 const (
@@ -42,8 +43,18 @@ func New() *CPU {
 }
 
 func (c *CPU) Collect(ctx context.Context) error {
-	var wg sync.WaitGroup
-	wg.Add(2)
+	errs := make([]error, 0, 2)
+	lscpuInfo, err := collectSummaryCPU()
+	if err != nil {
+		errs = append(errs, err)
+	}
+	c.SummaryCPU = lscpuInfo
 
-	return nil
+	smbiosCPU, err := collectSMBIOSCPU(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	c.SMBIOSCPU = smbiosCPU
+
+	return utils.CombineErrors(errs)
 }

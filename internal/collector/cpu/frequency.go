@@ -3,6 +3,7 @@ package cpu
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -26,32 +27,40 @@ const (
 )
 
 type coreFrequency struct {
-	minFreq     int
-	maxFreq     int
-	basedFreq   int
-	powerState  string
-	coreFreqMap map[string]int
+	minFreq    int
+	maxFreq    int
+	basedFreq  int
+	watt       float64
+	powerState string
+	threadMap  map[string][]*ThreadEntry
 }
 
-func collectThreadSummary(ctx context.Context) (*coreFrequency, error) {
+func collectFrequency(ctx context.Context, vendor string) (*coreFrequency, error) {
 	c := &coreFrequency{
 		powerState: powerStatePowerSaving,
+		threadMap:  make(map[string][]*ThreadEntry),
 	}
 
-	if err := c.turbostat(ctx); err != nil {
+	tempMap, err := collectTemperature(vendor)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.turbostat(ctx, vendor, tempMap); err != nil {
 		return nil, err
 	}
 
 	return c, nil
 }
 
-func (c *coreFrequency) turbostat(ctx context.Context) error {
+func (c *coreFrequency) turbostat(ctx context.Context, vendor string, tempMap map[string]int) error {
 	output := execute.CommandWithContext(ctx, turbostat, "-q", "sleep", "5")
 	if output.AsError() != nil {
 		return output.Err
 	}
 
-	lines := strings.Split(string(output.Stdout), "\n")
+	lines := strings.Split(string(output.Stderr), "\n")
+
 	if len(lines) < 3 {
 		return errors.New("turbostat output is too short")
 	}
@@ -70,6 +79,7 @@ func (c *coreFrequency) turbostat(ctx context.Context) error {
 	c.basedFreq = getIntValue(tscMHz, summary, headerIndex)
 	c.minFreq = getIntValue(bzyMHz, summary, headerIndex)
 	c.maxFreq = getIntValue(bzyMHz, summary, headerIndex)
+	c.watt = getFloatValue(pkgWatt, summary, headerIndex)
 
 	for _, line := range lines[3:] {
 		fields := strings.Fields(line)
@@ -78,8 +88,8 @@ func (c *coreFrequency) turbostat(ctx context.Context) error {
 		}
 
 		pkgVal := fields[headerIndex[pkg]]
-		core := fields[headerIndex[pkg]]
-		cpu := fields[headerIndex[pkg]]
+		coreVal := fields[headerIndex[core]]
+		threadVal := fields[headerIndex[cpu]]
 		coreFreq := getIntValue(bzyMHz, fields, headerIndex)
 
 		if coreFreq > c.maxFreq {
@@ -90,8 +100,16 @@ func (c *coreFrequency) turbostat(ctx context.Context) error {
 			c.minFreq = coreFreq
 		}
 
-		key := pkgVal + "-" + core + "-" + cpu
-		c.coreFreqMap[key] = coreFreq
+		thread := &ThreadEntry{
+			PhysicalID:    pkgVal,
+			CoreID:        coreVal,
+			ProcessorID:   threadVal,
+			CoreFrequency: formatMHz(coreFreq),
+		}
+
+		parseCoreTemperature(thread, tempMap, vendor)
+
+		c.threadMap[pkgVal] = append(c.threadMap[pkgVal], thread)
 	}
 
 	if c.minFreq-50 > c.basedFreq {
@@ -117,4 +135,17 @@ func getFloatValue(key string, header []string, headerIndex map[string]int) floa
 	}
 
 	return -1
+}
+
+func parseCoreTemperature(thread *ThreadEntry, tempMap map[string]int, vendor string) {
+	var key string
+	if vendor == "Intel" {
+		key = fmt.Sprintf("%s-%s", thread.PhysicalID, thread.CoreID)
+	} else {
+		key = thread.PhysicalID
+	}
+
+	if temp, ok := tempMap[key]; ok {
+		thread.Temperature = fmt.Sprintf("%d °C", temp)
+	}
 }

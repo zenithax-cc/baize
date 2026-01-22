@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/zenithax-cc/baize/internal/collector/smbios"
 )
@@ -18,22 +19,25 @@ func collectSMBIOSCPU(ctx context.Context) (SMBIOSCPU, error) {
 		CPUEntries: make([]*SMBIOSCPUEntry, 0, len(cpus)),
 	}
 
-	if core, err := collectThreadSummary(ctx); err == nil {
-		res.BasedFreqMHz = formatMHz(core.basedFreq)
-		res.MinFreqMHz = formatMHz(core.minFreq)
-		res.MaxFreqMHz = formatMHz(core.maxFreq)
-		res.PowerState = core.powerState
-		res.TemperatureCelsius = strconv.Itoa(core.temperature) + " °C"
-		res.Watt = strconv.Itoa(core.wattage) + " W"
-		for _, cpu := range cpus {
-			if socketID, exists := socketIDMap[cpu.SocketDesignation]; exists {
-				if thrs, exists := core.threadMap[socketID]; exists && len(thrs) > 0 {
-					cpu.ThreadEntries = thrs
-				}
-			}
-			res.CPUEntries = append(res.CPUEntries, cpu)
+	vendor := getVendor(cpus[0].Version)
+	freqs, err := collectFrequency(ctx, vendor)
+	if err != nil {
+		return res, err
+	}
+
+	res.BasedFreqMHz = formatMHz(freqs.basedFreq)
+	res.MaxFreqMHz = formatMHz(freqs.maxFreq)
+	res.MinFreqMHz = formatMHz(freqs.minFreq)
+	res.Watt = fmt.Sprintf("%0.2f W", freqs.watt)
+	res.PowerState = freqs.powerState
+
+	for _, c := range cpus {
+		if socketID, exists := socketIDMap[c.SocketDesignation]; exists {
+			c.ThreadEntries = freqs.threadMap[socketID]
 		}
 	}
+
+	res.CPUEntries = cpus
 
 	return res, nil
 }
@@ -75,4 +79,15 @@ func collectSMBIOSCPUEntry(ctx context.Context) ([]*SMBIOSCPUEntry, error) {
 
 func formatMHz(mhz int) string {
 	return strconv.Itoa(mhz) + " MHz"
+}
+
+func getVendor(version string) string {
+	switch {
+	case strings.HasPrefix(version, "AMD"):
+		return "AMD"
+	case strings.HasPrefix(version, "Intel"):
+		return "Intel"
+	default:
+		return strings.Fields(version)[0]
+	}
 }
