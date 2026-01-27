@@ -3,7 +3,11 @@ package raid
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/zenithax-cc/baize/pkg/execute"
 	"github.com/zenithax-cc/baize/pkg/utils"
@@ -155,4 +159,225 @@ func (pd *physicalDrive) parseSMARTDataSATA(data []byte) error {
 	pd.SMARTAttributes = ataInfo.AtaSmartAttributes.Table
 
 	return nil
+}
+
+func (pd *physicalDrive) parseSMARTDataSAS(data []byte) error {
+	var sasInfo SasSmartInfo
+	if err := json.Unmarshal(data, &sasInfo); err != nil {
+		return fmt.Errorf("unmarshal SasSmartInfo error: %w", err)
+	}
+
+	sasInfo.parseBaseInfo(pd)
+	pd.ProtocolType = "SAS"
+	pd.ProtocolVersion = sasInfo.SCSIVersion
+	pd.FirmwareVersion = sasInfo.Revision
+
+	pd.SMARTAttributes = map[string]int{
+		"grown_defect_list": sasInfo.SCSIGrownDefectList,
+		"read_uce_errors":   sasInfo.SCSIErrorCounterLog.Read.TotalUncorrectedErrors,
+		"write_uce_errors":  sasInfo.SCSIErrorCounterLog.Write.TotalUncorrectedErrors,
+		"verify_uce_errors": sasInfo.SCSIErrorCounterLog.Verify.TotalUncorrectedErrors,
+	}
+
+	return nil
+}
+
+func (pd *physicalDrive) parseSMARTDataNVMe(data []byte) error {
+	var nvmeInfo NVMeSmartInfo
+	if err := json.Unmarshal(data, &nvmeInfo); err != nil {
+		return fmt.Errorf("unmarshal NVMeSmartInfo error: %w", err)
+	}
+
+	nvmeInfo.parseBaseInfo(pd)
+	pd.ProtocolType = "NVMe"
+	pd.ProtocolVersion = nvmeInfo.NVMeVersion.String
+	pd.SMARTAttributes = nvmeInfo.NVMeSmartHealthInfo
+	pd.FormFactor = "2.5 inchs"
+
+	pd.Capacity = utils.KGMT(float64(nvmeInfo.NVMeCapacity), false)
+
+	return nil
+}
+
+func (bi *BasicInfo) parseBaseInfo(pd *physicalDrive) {
+	pd.ModelName = bi.ModelName
+	pd.SN = bi.SerialNumber
+	pd.SMARTStatus = bi.SmartStatus.Passed
+	pd.PowerOnTime = strconv.Itoa(bi.PowerOnTime.Hours)
+	pd.FirmwareVersion = bi.FirmwareVersion
+	pd.LogicalSectorSize = strconv.Itoa(bi.LogicalBlockSize)
+	pd.PhysicalSectorSize = strconv.Itoa(bi.PhysicalBlockSize)
+
+	pd.Temperature = fmt.Sprintf("%d ℃", bi.Temperature.Current)
+
+	if bi.RotationRate == 0 {
+		pd.RotationRate = ssdMediaType
+	} else {
+		pd.RotationRate = fmt.Sprintf("%d RPM", bi.RotationRate)
+	}
+
+	if bi.UserCapacity.Bytes != 0 {
+		pd.Capacity = utils.KGMT(float64(bi.UserCapacity.Bytes), false)
+	}
+
+	if bi.WWN.NAA != 0 && bi.WWN.OUI != 0 && bi.WWN.ID != 0 {
+		pd.WWN = fmt.Sprintf("%d%d%d", bi.WWN.NAA, bi.WWN.OUI, bi.WWN.ID)
+	}
+
+	pd.Vendor, pd.Product = parseModelName(bi.ModelName)
+}
+
+type disk struct {
+	Manufacturer []map[string]string `json:"manufacturer"`
+	Product      []map[string]string `json:"product"`
+}
+
+type dev struct {
+	Disk disk `json:"disk"`
+}
+
+var (
+	devMapCache     *dev
+	devMapCacheOnce sync.Once
+	devMapCacheErr  error
+
+	regexCache   = make(map[string]*regexp.Regexp)
+	regexCacheMu sync.RWMutex
+)
+
+func loadDevMapConfig() (*dev, error) {
+	devMapCacheOnce.Do(func() {
+		js, err := os.Open(devMapConfigPath)
+		if err != nil {
+			devMapCacheErr = fmt.Errorf("open devmap config file failed: %w", err)
+			return
+		}
+		defer js.Close()
+
+		devMapCache = &dev{}
+		if err := json.NewDecoder(js).Decode(devMapCache); err != nil {
+			devMapCacheErr = fmt.Errorf("decode devmap config file failed: %w", err)
+			devMapCache = nil
+		}
+	})
+
+	return devMapCache, devMapCacheErr
+}
+
+func getOrCompileRegex(pattern string) (*regexp.Regexp, error) {
+	regexCacheMu.RLock()
+	if regex, ok := regexCache[pattern]; ok {
+		regexCacheMu.RUnlock()
+		return regex, nil
+	}
+	regexCacheMu.RUnlock()
+
+	regexCacheMu.Lock()
+	defer regexCacheMu.Unlock()
+
+	if reg, ok := regexCache[pattern]; ok {
+		return reg, nil
+	}
+	reg, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	regexCache[pattern] = reg
+	return reg, nil
+}
+
+func parseModelName(m string) (string, string) {
+	retVendor, retProduct := "Unkown", "Unkown"
+
+	cleanedName := modelNameReplacer.Replace(strings.TrimSpace(m))
+
+	devMap, err := loadDevMapConfig()
+	if err != nil || devMap == nil {
+		return retVendor, retProduct
+	}
+
+	parts := strings.Fields(cleanedName)
+	if len(parts) == 0 {
+		return retVendor, retProduct
+	}
+
+	lastField := parts[len(parts)-1]
+
+	for _, value := range devMap.Disk.Manufacturer {
+		reg, err := getOrCompileRegex(value["regular"])
+		if err != nil {
+			continue
+		}
+		if reg.MatchString(lastField) {
+			retVendor = value["stdName"]
+			break
+		}
+	}
+
+	for _, value := range devMap.Disk.Product {
+		if !strings.HasPrefix(value["stdName"], retVendor) {
+			continue
+		}
+		reg, err := getOrCompileRegex(value["regular"])
+		if err != nil {
+			continue
+		}
+		if reg.MatchString(lastField) {
+			retProduct = value["stdName"]
+			break
+		}
+	}
+
+	return retVendor, retProduct
+}
+
+func (pd *physicalDrive) getWriteAndReadCache(cacheCmd string) error {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	errs := make([]error, 0, 2)
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		cmd := cacheCmd + writeCacheSuffix
+		output := execute.ShellCommand(cmd)
+		if output.Err != nil {
+			mu.Lock()
+			errs = append(errs, fmt.Errorf("running %s failed: %w", cmd, output.Err))
+			mu.Unlock()
+		}
+		if len(output.Stdout) > 0 {
+			mu.Lock()
+			pd.WriteCache = parseCacheData(output.Stdout)
+			mu.Unlock()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		cmd := cacheCmd + readCacheSuffix
+		output := execute.ShellCommand(cmd)
+		if output.Err != nil {
+			mu.Lock()
+			errs = append(errs, fmt.Errorf("running %s failed: %w", cmd, output.Err))
+			mu.Unlock()
+		}
+		if len(output.Stdout) > 0 {
+			mu.Lock()
+			pd.WriteCache = parseCacheData(output.Stdout)
+			mu.Unlock()
+		}
+	}()
+
+	wg.Wait()
+
+	return utils.CombineErrors(errs)
+}
+
+func parseCacheData(data []byte) string {
+	if idx := strings.IndexByte(string(data), ':'); idx != -1 && idx+1 < len(data) {
+		return strings.TrimSpace(string(data[idx+1:]))
+	}
+	return "Unknown"
 }

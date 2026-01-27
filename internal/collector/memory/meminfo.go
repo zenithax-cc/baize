@@ -77,5 +77,5 @@ func convertUnit(value string) string {
 		return value
 	}
 
-	return utils.KGMT(numUint * 1024)
+	return utils.KGMT(numUint*1024, true)
 }
