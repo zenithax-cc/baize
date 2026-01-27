@@ -1,6 +1,8 @@
 package raid
 
-import "github.com/zenithax-cc/baize/internal/collector/pci"
+import (
+	"github.com/zenithax-cc/baize/internal/collector/pci"
+)
 
 type Controllers struct {
 	Controller []*controller `json:"controller,omitempty"`
@@ -110,58 +112,46 @@ type physicalDrive struct {
 	SlotId      string `json:"slot_id,omitempty"`      // 物理硬盘插槽编号
 	DeviceId    string `json:"device_id,omitempty"`    // 物理硬盘设备编号
 	DG          string `json:"drive_group,omitempty"`  // 硬盘组
-
-	// 厂商和产品信息
-	Vendor    string `json:"vendor,omitempty"`        // 物理硬盘厂商
-	Product   string `json:"product,omitempty"`       // 物理硬盘产品名称
-	OemVendor string `json:"oem_vendor,omitempty"`    // 物理硬盘OEM厂商
-	Model     string `json:"model,omitempty"`         // 物理硬盘Model
-	SN        string `json:"serial_number,omitempty"` // 物理硬盘SN
-	FruCru    string `json:"fru_cru,omitempty"`       // 物理硬盘FRU信息
-	WWN       string `json:"wwn,omitempty"`           // 物理硬盘WWN
-
-	// 容量和规格
-	Capacity           string `json:"capacity,omitempty"`             // 物理硬盘容量
-	MediumType         string `json:"medium_type,omitempty"`          // 物理硬盘类型
-	RotationRate       string `json:"rotation_rate,omitempty"`        // 物理硬盘转速
-	FormFactor         string `json:"form_factor,omitempty"`          // 物理硬盘尺寸
-	LogicalSectorSize  string `json:"logical_sector_size,omitempty"`  // 物理硬盘逻辑扇区大小
-	PhysicalSectorSize string `json:"physical_sector_size,omitempty"` // 物理硬盘物理扇区大小
-
-	// 接口和速度
-	Interface   string `json:"interface,omitempty"`    // 物理硬盘接口
 	DeviceSpeed string `json:"device_speed,omitempty"` // 物理硬盘设备速度
 	LinkSpeed   string `json:"link_speed,omitempty"`   // 物理硬盘链路速度
 
 	// 状态信息
 	State                 string `json:"state,omitempty"`                    // 物理硬盘状态
 	RebuildInfo           string `json:"rebuild_info,omitempty"`             // 物理硬盘重建信息
-	PowerOnTime           string `json:"power_on_time,omitempty"`            // 物理硬盘通电时间
-	Temperature           string `json:"temperature,omitempty"`              // 物理硬盘温度
 	MediaWearoutIndicator string `json:"media_wearout_indicator,omitempty"`  // SSD磨损值
 	AvailableReservdSpace string `json:"available_reserved_space,omitempty"` // 可用的预留闪存数量
-
-	// 缓存配置
-	WriteCache string `json:"write_cache,omitempty"` // 物理硬盘写缓存
-	ReadCache  string `json:"read_cache,omitempty"`  // 物理硬盘读缓存
 
 	// 错误和健康状态
 	ShieldCounter          string `json:"shield_counter,omitempty"`           // 物理硬盘保护计数器
 	OtherErrorCount        string `json:"other_error_count,omitempty"`        // 物理硬盘其他错误数
 	MediaErrorCount        string `json:"media_error_count,omitempty"`        // 物理硬盘物理媒介错误数
 	PredictiveFailureCount string `json:"predictive_failure_count,omitempty"` // 预测失效计数
-	SmartStatus            string `json:"smart_status,omitempty"`             // 物理硬盘SMART状态
 	SmartAlert             string `json:"smart_alert,omitempty"`              // 物理硬盘SMART警告
 
 	// 其他信息
 	MappingFile    string `json:"mapping_file,omitempty"`    // 物理硬盘映射系统块设备名称
-	Type           string `json:"type,omitempty"`            // 类型
-	Firmware       string `json:"firmware,omitempty"`        // 物理硬盘固件
 	Diagnose       string `json:"diagnose,omitempty"`        // 物理硬盘健康分析接口
 	DiagnoseDetail string `json:"diagnose_detail,omitempty"` // 物理硬盘健康分析详情
 
-	// SMART属性 - 使用更具体的结构体类型
-	SmartAttribute any `json:"smart_attributes,omitempty"` // Smart属性
+	Vendor             string `json:"vendor,omitempty"`
+	Product            string `json:"product,omitempty"`
+	ModelName          string `json:"model_name,omitempty"`
+	SN                 string `json:"sn,omitempty"`
+	WWN                string `json:"wwn,omitempty"`
+	FirmwareVersion    string `json:"firmware_version,omitempty"`
+	ProtocolType       string `json:"protocol_type,omitempty"`
+	ProtocolVersion    string `json:"protocol_version,omitempty"`
+	Capacity           string `json:"capacity,omitempty"`
+	LogicalSectorSize  string `json:"logical_sector_size,omitempty"`
+	PhysicalSectorSize string `json:"physical_sector_size,omitempty"`
+	RotationRate       string `json:"rotation_rate,omitempty"`
+	FormFactor         string `json:"form_factor,omitempty"`
+	PowerOnTime        string `json:"power_on_time,omitempty"`
+	Temperature        string `json:"temperature,omitempty"`
+	WriteCache         string `json:"write_cache,omitempty"`
+	ReadCache          string `json:"read_cache,omitempty"`
+	SMARTStatus        bool   `json:"smart_status,omitempty"`
+	SMARTAttributes    any    `json:"smart_attributes,omitempty"`
 }
 
 type nvme struct {
