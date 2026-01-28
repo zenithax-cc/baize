@@ -5,20 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/zenithax-cc/baize/internal/collector/cpu"
+	"github.com/zenithax-cc/baize/internal/collector/product"
 )
 
 func main() {
-	n := cpu.New()
 
-	err := n.Collect(context.Background())
+	p := product.New()
+
+	err := p.Collect(context.Background())
 	if err != nil {
-		fmt.Printf("cpu: %v", err)
+		fmt.Println("Error collecting product information:", err)
 	}
 
-	js, err := json.MarshalIndent(n, "", " ")
+	js, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
-		fmt.Printf("marshl json: %v", err)
+		fmt.Println("Error marshalling product information:", err)
 	}
 
 	fmt.Println(string(js))
