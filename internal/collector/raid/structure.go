@@ -54,13 +54,13 @@ type controller struct {
 	DiagnoseDetail string   `json:"diagnose_detail,omitempty"` // RAID卡诊断详情
 	PCIe           *pci.PCI `json:"pcie_info,omitempty"`       // PCIe信息
 
-	Backplanes     []*backplane     `json:"backplanes,omitempty"`      // 背板列表
+	Backplanes     []*enclosure     `json:"backplanes,omitempty"`      // 背板列表
 	Battery        []*battery       `json:"battery,omitempty"`         // 电池信息
 	LogicalDrives  []*logicalDrive  `json:"logical_drives,omitempty"`  // 逻辑硬盘列表
 	PhysicalDrives []*physicalDrive `json:"physical_drives,omitempty"` // 物理硬盘列表
 }
 
-type backplane struct {
+type enclosure struct {
 	Location              string `json:"location,omitempty"`                // 背板位置
 	ID                    string `json:"id,omitempty"`                      // 背板ID
 	State                 string `json:"state,omitempty"`                   // 背板状态
@@ -103,6 +103,7 @@ type logicalDrive struct {
 	CreateTime            string           `json:"create_time,omitempty"`               // 逻辑硬盘创建时间
 	ScsiNaaId             string           `json:"scsi_naa_id,omitempty"`               // 逻辑硬盘SCSI编号
 	PhysicalDrives        []*physicalDrive `json:"physical_drives,omitempty"`           // 逻辑盘包含的物理硬盘
+	pds                   []string
 }
 
 type physicalDrive struct {
@@ -139,6 +140,7 @@ type physicalDrive struct {
 	SN                 string `json:"sn,omitempty"`
 	WWN                string `json:"wwn,omitempty"`
 	FirmwareVersion    string `json:"firmware_version,omitempty"`
+	MediaType          string `json:"media_type,omitempty"`
 	ProtocolType       string `json:"protocol_type,omitempty"`
 	ProtocolVersion    string `json:"protocol_version,omitempty"`
 	Capacity           string `json:"capacity,omitempty"`

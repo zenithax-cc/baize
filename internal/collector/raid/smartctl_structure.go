@@ -74,7 +74,7 @@ type SpeedInfo struct {
 }
 
 type AtaSmartAttributes struct {
-	Revision string              `json:"revision"`
+	Revision int                 `json:"revision"`
 	Table    []AtaSmartAttribute `json:"table"`
 }
 

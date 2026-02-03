@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -195,9 +196,6 @@ const (
 	MiB
 	GiB
 	TiB
-)
-
-const (
 	KB float64 = 1000
 	MB float64 = KB * 1000
 	GB float64 = MB * 1000
@@ -237,4 +235,13 @@ func KGMT(v float64, binary bool) string {
 	}
 
 	return fmt.Sprintf("%f B", v)
+}
+
+func ReadLinkBase(path string) (string, error) {
+	link, err := os.Readlink(path)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Base(link), nil
 }

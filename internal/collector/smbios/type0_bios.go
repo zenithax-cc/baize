@@ -183,7 +183,8 @@ func (b *Type0BIOS) GetROMSize() string {
 }
 
 const (
-	ErrInvalidTableType = "invalid table type"
+	ErrInvalidTableType   = "invalid table type"
+	ErrInvalidTableLength = "invalid table length"
 )
 
 func parseType0BIOS(t *Table) (*Type0BIOS, error) {

@@ -51,7 +51,7 @@ func getDecoder(ctx context.Context) (*Decoder, error) {
 		cache:   make(map[TableType][]any, len(parsers)),
 	}
 
-	ep, tables, err := readSMBIOS(ctx)
+	ep, tables, err := smbiosReader(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrSMBIOSFailed, err)
 	}
@@ -100,15 +100,26 @@ func (d *Decoder) getParserData(t TableType) ([]any, error) {
 	return res, utils.CombineErrors(errs)
 }
 
-func GetTypeData[T any](d *Decoder, t TableType) ([]T, error) {
-	data, err := d.getParserData(t)
+var decoder *Decoder
+
+func init() {
+	var err error
+	decoder, err = New(context.Background())
+	if err != nil {
+		panic(err)
+	}
+}
+
+func GetTypeData[T any](t TableType) ([]T, error) {
+
+	data, err := decoder.getParserData(t)
 	if err != nil {
 		return nil, err
 	}
 
 	res := make([]T, 0, len(data))
-	for _, d := range data {
-		if item, ok := d.(T); ok {
+	for _, dt := range data {
+		if item, ok := dt.(T); ok {
 			res = append(res, item)
 		}
 	}

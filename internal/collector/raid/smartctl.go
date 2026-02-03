@@ -1,6 +1,8 @@
 package raid
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,9 +27,8 @@ const (
 	ssdMediaType = "Solid State Device"
 	hddMediaType = "Hard Disk Device"
 
-	suffixCmd        = " -a -j | grep -v ^$"
-	writeCacheSuffix = " -g wcache | grep -i cache"
-	readCacheSuffix  = " -g rcache | grep -i cache"
+	suffixCmd   = " -a -j | grep -v ^$"
+	cacheSuffix = " -g all| grep -v ^$"
 
 	devMapConfigPath = "/usr/local/beidou/config/devmap.json"
 	smartctlPath     = "/usr/sbin/smartctl"
@@ -42,11 +43,11 @@ type cmdTemplate struct {
 
 var (
 	cmdTemplates = map[string]cmdTemplate{
-		"megaraid": {format: "%s /dev/bus/%s -d megaraid,%s %s", argCount: 4, useCtrlID: true},
-		"cciss":    {format: "%s %s -d cciss,%s %s", argCount: 4, useCtrlID: true},
-		"aacraid":  {format: "%s %s -d aacraid,%s %s", argCount: 4, useCtrlID: true},
-		"nvme":     {format: "%s %s -d nvme %s", argCount: 3},
-		"jbod":     {format: "%s %s %s", argCount: 3},
+		"megaraid": {format: "%s /dev/bus/%s -d megaraid,%s ", argCount: 4, useCtrlID: true},
+		"cciss":    {format: "%s %s -d cciss,%s ", argCount: 4, useBlockDev: true},
+		"aacraid":  {format: "%s %s -d aacraid,%s ", argCount: 4, useCtrlID: true},
+		"nvme":     {format: "%s %s -d nvme ", argCount: 3},
+		"jbod":     {format: "%s %s ", argCount: 3},
 	}
 
 	modelNameReplacer = strings.NewReplacer(
@@ -73,21 +74,18 @@ type SMARTConfig struct {
 	DeviceID     string
 }
 
-func buildCommands(cmdTpl cmdTemplate, cfg SMARTConfig) (string, string) {
-	args := make([]string, 0, cmdTpl.argCount)
+func buildCommands(cmdTpl cmdTemplate, cfg SMARTConfig) string {
+	var prefixCmd string
 	switch {
 	case cmdTpl.useCtrlID:
-		args = []string{smartctlPath, cfg.ControllerID, cfg.DeviceID}
+		prefixCmd = fmt.Sprintf(cmdTpl.format, smartctlPath, cfg.ControllerID, cfg.DeviceID)
 	case cmdTpl.useBlockDev:
-		args = []string{smartctlPath, cfg.BlockDevice, cfg.DeviceID}
+		prefixCmd = fmt.Sprintf(cmdTpl.format, smartctlPath, cfg.BlockDevice, cfg.DeviceID)
 	default:
-		args = []string{smartctlPath, cfg.DeviceID}
+		prefixCmd = fmt.Sprintf(cmdTpl.format, smartctlPath, cfg.DeviceID, suffixCmd)
 	}
 
-	smartctlCmd := fmt.Sprintf(cmdTpl.format, append(args, suffixCmd))
-	cacheCmd := fmt.Sprintf(cmdTpl.format, append(args, ""))
-
-	return smartctlCmd, cacheCmd
+	return prefixCmd
 }
 
 func (pd *physicalDrive) collectSMARTData(cfg SMARTConfig) error {
@@ -96,9 +94,11 @@ func (pd *physicalDrive) collectSMARTData(cfg SMARTConfig) error {
 		return fmt.Errorf("not supported SMART type: %s", cfg.Option)
 	}
 
-	smartctlCmd, cacheCmd := buildCommands(cmdTpl, cfg)
+	prefixCmd := buildCommands(cmdTpl, cfg)
 
-	output := execute.ShellCommand(smartctlCmd)
+	println(prefixCmd)
+
+	output := execute.ShellCommand(prefixCmd + suffixCmd)
 	if output.Err != nil {
 		return fmt.Errorf("running smartctl failed: %w", output.Err)
 	}
@@ -109,7 +109,7 @@ func (pd *physicalDrive) collectSMARTData(cfg SMARTConfig) error {
 		errs = append(errs, err)
 	}
 
-	if err := pd.getWriteAndReadCache(cacheCmd); err != nil {
+	if err := pd.getWriteAndReadCache(prefixCmd); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -333,51 +333,33 @@ func parseModelName(m string) (string, string) {
 }
 
 func (pd *physicalDrive) getWriteAndReadCache(cacheCmd string) error {
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	errs := make([]error, 0, 2)
-
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		cmd := cacheCmd + writeCacheSuffix
-		output := execute.ShellCommand(cmd)
-		if output.Err != nil {
-			mu.Lock()
-			errs = append(errs, fmt.Errorf("running %s failed: %w", cmd, output.Err))
-			mu.Unlock()
-		}
-		if len(output.Stdout) > 0 {
-			mu.Lock()
-			pd.WriteCache = parseCacheData(output.Stdout)
-			mu.Unlock()
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		cmd := cacheCmd + readCacheSuffix
-		output := execute.ShellCommand(cmd)
-		if output.Err != nil {
-			mu.Lock()
-			errs = append(errs, fmt.Errorf("running %s failed: %w", cmd, output.Err))
-			mu.Unlock()
-		}
-		if len(output.Stdout) > 0 {
-			mu.Lock()
-			pd.WriteCache = parseCacheData(output.Stdout)
-			mu.Unlock()
-		}
-	}()
-
-	wg.Wait()
-
-	return utils.CombineErrors(errs)
-}
-
-func parseCacheData(data []byte) string {
-	if idx := strings.IndexByte(string(data), ':'); idx != -1 && idx+1 < len(data) {
-		return strings.TrimSpace(string(data[idx+1:]))
+	output := execute.ShellCommand(cacheCmd + cacheSuffix)
+	if output.Err != nil {
+		return output.Err
 	}
-	return "Unknown"
+
+	scanner := bufio.NewScanner(bytes.NewReader(output.Stdout))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		key, value, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+
+		switch key {
+		case "Writeback Cache is":
+			pd.WriteCache = value
+		case "Write Cache is":
+			pd.WriteCache = value
+		case "Read Cache is":
+			pd.ReadCache = value
+		case "Rd look-ahead is":
+			pd.ReadCache = value
+		}
+	}
+
+	return scanner.Err()
 }

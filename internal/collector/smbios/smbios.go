@@ -3,7 +3,6 @@ package smbios
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,31 +14,13 @@ const (
 	sysfsDMI        = "/sys/firmware/dmi/tables/DMI"
 	sysfsEntryPoint = "/sys/firmware/dmi/tables/smbios_entry_point"
 	devMem          = "/dev/mem"
-
-	startAddr = 0x000F0000
-	endAddr   = 0x00100000
-
-	maxTableSize    = 1 << 20
-	maxAddressValue = 0xFFFFFFFF
+	startAddr       = 0xF0000
+	endAddr         = 0x100000
+	maxTableSize    = 1024 * 1024 // 1MB limit
 	readTimeout     = 10 * time.Second
-
-	paragraphSize    = 1 << 4
-	searchRegionSize = endAddr - startAddr
-
-	anchor32    = "_SM_"
-	anchor64    = "_SM3_"
-	anchor32Len = 0x1f
-	anchor64Len = 0x18
 )
 
-var (
-	ErrReaderClosed       = errors.New("smbios: reader closed")
-	ErrEntryPointNotFound = errors.New("smbios: entry point not found")
-	ErrInvalidTableAddr   = errors.New("smbios: invalid table address")
-	ErrInvalidTableLen    = errors.New("smbios: invalid table length")
-	ErrAddressOverflow    = errors.New("smbios: address overflow")
-)
-
+// 错误类型定义
 type SMBIOSError struct {
 	Op   string
 	Path string
@@ -47,35 +28,32 @@ type SMBIOSError struct {
 }
 
 func (e *SMBIOSError) Error() string {
-	if e.Path != "" {
-		return fmt.Sprintf("smbios %s %s: %v", e.Op, e.Path, e.Err)
-	}
-	return fmt.Sprintf("smbios %s: %v", e.Op, e.Err)
+	return fmt.Sprintf("smbios %s %s: %v", e.Op, e.Path, e.Err)
 }
 
 func (e *SMBIOSError) Unwrap() error {
 	return e.Err
 }
 
-func (e *SMBIOSError) Is(target error) bool {
-	t, ok := target.(*SMBIOSError)
-	if !ok {
-		return false
-	}
-	return (t.Op == "" || e.Op == t.Op) && (t.Path == "" || e.Path == t.Path)
-}
-
-type tableReader interface {
+// 接口定义
+type Reader interface {
 	readTables(ctx context.Context, tableAddr, tableLen int) ([]*Table, error)
 	readEntryPoint(ctx context.Context) (EntryPoint, error)
 	Close() error
 }
 
+// sysfs reader implementation
 type sysfsReader struct{}
 
 func (r *sysfsReader) readTables(ctx context.Context, tableAddr, tableLen int) ([]*Table, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	if tableLen <= 0 || tableLen > maxTableSize {
+		return nil, fmt.Errorf("invalid table length: %d", tableLen)
 	}
 
 	file, err := os.Open(sysfsDMI)
@@ -84,18 +62,14 @@ func (r *sysfsReader) readTables(ctx context.Context, tableAddr, tableLen int) (
 	}
 	defer file.Close()
 
-	limitedReader := io.LimitReader(file, int64(maxTableSize))
-	data, err := io.ReadAll(limitedReader)
-	if err != nil {
-		return nil, &SMBIOSError{Op: "read", Path: sysfsDMI, Err: err}
-	}
-
-	return parseTables(bytes.NewReader(data))
+	return parseTables(file)
 }
 
 func (r *sysfsReader) readEntryPoint(ctx context.Context) (EntryPoint, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
 	file, err := os.Open(sysfsEntryPoint)
@@ -108,12 +82,13 @@ func (r *sysfsReader) readEntryPoint(ctx context.Context) (EntryPoint, error) {
 }
 
 func (r *sysfsReader) Close() error {
-	return nil
+	return nil // No resources to clean up
 }
 
+// devmem reader implementation
 type devMemReader struct {
 	file   *os.File
-	mu     sync.Mutex
+	mutex  sync.RWMutex
 	closed bool
 }
 
@@ -127,167 +102,136 @@ func NewDevMemReader() (*devMemReader, error) {
 }
 
 func (r *devMemReader) Close() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
 
-	if !r.closed && r.file == nil {
-		return nil
+	if !r.closed && r.file != nil {
+		err := r.file.Close()
+		r.file = nil
+		r.closed = true
+		return err
 	}
+	return nil
+}
 
-	err := r.file.Close()
-	r.file = nil
-	r.closed = true
-	return err
+func (r *devMemReader) isClosed() bool {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	return r.closed
 }
 
 func (r *devMemReader) readTables(ctx context.Context, tableAddr, tableLen int) ([]*Table, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
-	if err := validateTableParams(tableAddr, tableLen); err != nil {
-		return nil, err
+	if tableAddr < 0 {
+		return nil, fmt.Errorf("invalid table address: 0x%x", tableAddr)
+	}
+	if tableLen <= 0 || tableLen > maxTableSize {
+		return nil, fmt.Errorf("invalid table length: %d", tableLen)
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
 
 	if r.closed || r.file == nil {
-		return nil, ErrReaderClosed
+		return nil, fmt.Errorf("reader is closed")
 	}
 
-	data, err := r.readAtLocked(int64(tableAddr), tableLen)
-	if err != nil {
-		return nil, err
+	if _, err := r.file.Seek(int64(tableAddr), io.SeekStart); err != nil {
+		return nil, &SMBIOSError{Op: "seek", Path: devMem, Err: err}
+	}
+
+	data := make([]byte, tableLen)
+	if _, err := io.ReadFull(r.file, data); err != nil {
+		return nil, &SMBIOSError{Op: "read", Path: devMem, Err: err}
 	}
 
 	return parseTables(bytes.NewReader(data))
 }
 
 func (r *devMemReader) readEntryPoint(ctx context.Context) (EntryPoint, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
 
 	if r.closed || r.file == nil {
-		return nil, ErrReaderClosed
+		return nil, fmt.Errorf("reader is closed")
 	}
 
-	eps, err := r.searchEntryPointLocked(ctx)
+	epAddr, err := r.findEntryPointAddr(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := r.file.Seek(int64(eps), io.SeekStart); err != nil {
+	if _, err := r.file.Seek(int64(epAddr), io.SeekStart); err != nil {
 		return nil, &SMBIOSError{Op: "seek", Path: devMem, Err: err}
 	}
 
 	return parseEntryPoint(r.file)
 }
 
-func (r *devMemReader) readAtLocked(offset int64, length int) ([]byte, error) {
-	if _, err := r.file.Seek(offset, io.SeekStart); err != nil {
-		return nil, &SMBIOSError{Op: "seek", Path: devMem, Err: err}
+func (r *devMemReader) findEntryPointAddr(ctx context.Context) (int, error) {
+
+	if _, err := r.file.Seek(int64(startAddr), io.SeekStart); err != nil {
+		return 0, &SMBIOSError{Op: "seek", Path: devMem, Err: err}
 	}
 
-	data := make([]byte, length)
-	if _, err := io.ReadFull(r.file, data); err != nil {
-		return nil, &SMBIOSError{Op: "read", Path: devMem, Err: err}
-	}
+	const paragraph = 16
+	b := make([]byte, paragraph)
 
-	return data, nil
-}
-
-func (r *devMemReader) searchEntryPointLocked(ctx context.Context) (int, error) {
-	data, err := r.readAtLocked(startAddr, searchRegionSize)
-	if err != nil {
-		return 0, err
-	}
-
-	for offset := 0; offset+paragraphSize <= len(data); offset += paragraphSize {
-		if offset&0xFFF == 0 {
-			if err := ctx.Err(); err != nil {
-				return 0, err
-			}
+	for addr := startAddr; addr < endAddr; addr += paragraph {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		default:
 		}
 
-		chunk := data[offset:]
-		if bytes.HasPrefix(chunk, []byte(anchor32)) {
-			return startAddr + offset, nil
+		if _, err := io.ReadFull(r.file, b); err != nil {
+			return 0, &SMBIOSError{Op: "read", Path: devMem, Err: err}
 		}
 
-		if bytes.HasPrefix(chunk, []byte(anchor64)) {
-			return startAddr + offset, nil
+		if bytes.HasPrefix(b, []byte("_SM")) {
+			return addr, nil
 		}
 	}
 
-	return 0, fmt.Errorf("%w: scanned 0x%X - 0x%X", ErrEntryPointNotFound, startAddr, endAddr)
+	return 0, fmt.Errorf("SMBIOS entry point not found in memory range 0x%x-0x%x", startAddr, endAddr)
 }
 
-func validateTableParams(tableAddr, tableLen int) error {
-	if tableAddr < 0 || tableAddr > maxAddressValue {
-		return fmt.Errorf("%w: 0x%X", ErrInvalidTableAddr, tableAddr)
-	}
-
-	if tableLen <= 0 || tableLen > maxTableSize {
-		return fmt.Errorf("%w: %d (max: %d)", ErrInvalidTableLen, tableLen, maxTableSize)
-	}
-
-	endAddress := int64(tableAddr) + int64(tableLen)
-	if endAddress > maxAddressValue {
-		return fmt.Errorf("%w: end address 0x%X exceeds limit", ErrAddressOverflow, endAddress)
-	}
-
-	return nil
-}
-
-func readSMBIOS(ctx context.Context) (EntryPoint, []*Table, error) {
+func smbiosReader(ctx context.Context) (EntryPoint, []*Table, error) {
 	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
 	}
 
-	reader, cleanup, err := selectReader()
-	if err != nil {
-		return nil, nil, err
-	}
-	defer cleanup()
-
-	return readFromSource(ctx, reader)
-}
-
-func selectReader() (tableReader, func(), error) {
 	if _, err := os.Stat(sysfsEntryPoint); err == nil {
 		reader := &sysfsReader{}
-		return reader, func() {}, nil
+		return readFromSource(ctx, reader)
 	}
 
 	reader, err := NewDevMemReader()
 	if err != nil {
-		return nil, nil, fmt.Errorf("no available SMBIOS source: %w", err)
+		return nil, nil, fmt.Errorf("failed to create devmem reader: %w", err)
 	}
+	defer reader.Close()
 
-	cleanup := func() {
-		_ = reader.Close()
-	}
-
-	return reader, cleanup, nil
+	return readFromSource(ctx, reader)
 }
 
-func readFromSource(ctx context.Context, reader tableReader) (EntryPoint, []*Table, error) {
+func readFromSource(ctx context.Context, reader Reader) (EntryPoint, []*Table, error) {
 	ep, err := reader.readEntryPoint(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading entry point: %w", err)
+		return nil, nil, fmt.Errorf("failed to read entry point: %w", err)
 	}
 
 	tableAddr, tableLen := ep.Table()
 	tables, err := reader.readTables(ctx, tableAddr, tableLen)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading tables: %w", err)
+		return nil, nil, fmt.Errorf("failed to read tables: %w", err)
 	}
 
 	return ep, tables, nil

@@ -38,15 +38,14 @@ var (
 )
 
 type distroMatcher struct {
-	prefix    string
-	filePath  string
-	regex     *regexp.Regexp
-	submatch  int
-	usePrefix bool
+	prefix   string
+	filePath string
+	regex    *regexp.Regexp
+	submatch int
 }
 
 var distroMatchers = []distroMatcher{
-	{prefix: "ubuntu", regex: regexVersion, submatch: 1, usePrefix: true},
+	{prefix: "ubuntu", regex: regexVersion, submatch: 1},
 	{prefix: "centos", filePath: centosReleasePath, regex: regexCentos, submatch: 1},
 	{prefix: "rocky", filePath: rockyReleasePath, regex: regexRocky, submatch: 1},
 	{prefix: "rhel", filePath: redhatReleasePath, regex: regexVersion, submatch: 1},
@@ -85,7 +84,7 @@ func (p *Product) collectKernel() error {
 func (p *Product) collectDistribution() error {
 	lines, err := utils.ReadLines(osReleasePath)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", osReleasePath)
+		return fmt.Errorf("read %s: %w", osReleasePath, err)
 	}
 
 	if len(lines) == 0 {
@@ -124,22 +123,17 @@ func getMinorVersion(distr string) string {
 			continue
 		}
 
-		var content string
-		if matcher.usePrefix {
-			content = distr
-		} else if matcher.filePath != "" {
+		content := []byte(distr)
+		if matcher.filePath != "" {
 			var err error
-			var contentByte []byte
-
-			contentByte, err = os.ReadFile(matcher.filePath)
+			content, err = os.ReadFile(matcher.filePath)
 			if err != nil {
 				continue
 			}
+		}
 
-			if matchs := matcher.regex.FindStringSubmatch(string(contentByte)); len(matchs) > matcher.submatch {
-				content = matchs[matcher.submatch]
-				return content
-			}
+		if matches := matcher.regex.FindSubmatch(content); len(matches) > matcher.submatch {
+			return string(matches[matcher.submatch])
 		}
 	}
 

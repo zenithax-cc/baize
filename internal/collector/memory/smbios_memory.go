@@ -8,12 +8,8 @@ import (
 )
 
 func collectPhysicalMemory(ctx context.Context) ([]*SmbiosMemoryEntry, error) {
-	d, err := smbios.New(ctx)
-	if err != nil {
-		return nil, err
-	}
 
-	memoryTables, err := smbios.GetTypeData[*smbios.Type17MemoryDevice](d, 17)
+	memoryTables, err := smbios.GetTypeData[*smbios.Type17MemoryDevice](17)
 	if err != nil {
 		return nil, err
 	}

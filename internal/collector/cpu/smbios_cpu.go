@@ -43,12 +43,8 @@ func collectSMBIOSCPU(ctx context.Context) (SMBIOSCPU, error) {
 }
 
 func collectSMBIOSCPUEntry(ctx context.Context) ([]*SMBIOSCPUEntry, error) {
-	d, err := smbios.New(ctx)
-	if err != nil {
-		return nil, err
-	}
 
-	cpus, err := smbios.GetTypeData[*smbios.Type4Processor](d, 4)
+	cpus, err := smbios.GetTypeData[*smbios.Type4Processor](4)
 	if err != nil {
 		return nil, err
 	}

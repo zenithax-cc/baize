@@ -21,14 +21,11 @@ func (p *Product) Collect(ctx context.Context) error {
 		{name: "kernel", fn: p.collectKernel},
 		{name: "distribution", fn: p.collectDistribution},
 		{name: "bios", fn: p.collectBIOS},
+		{name: "system", fn: p.collectSystem},
 		{name: "baseboard", fn: p.collectBaseBoard},
 		{name: "chassis", fn: p.collectChassis},
 	}
 
-	return p.runTasksConcurently(ctx, tasks)
-}
-
-func (p *Product) runTasksConcurently(ctx context.Context, tasks []collectTask) error {
 	var (
 		wg   sync.WaitGroup
 		mu   sync.Mutex

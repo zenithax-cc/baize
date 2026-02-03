@@ -8,7 +8,7 @@ import (
 )
 
 func collectSMBIOSType[T any](typeID smbios.TableType, typeName string, process func(T)) error {
-	entries, err := smbios.GetTypeData[T](&smbios.Decoder{}, typeID)
+	entries, err := smbios.GetTypeData[T](typeID)
 	if err != nil {
 		return fmt.Errorf("get %s from SMBIOS: %w", typeName, err)
 	}
@@ -23,22 +23,29 @@ func collectSMBIOSType[T any](typeID smbios.TableType, typeName string, process 
 }
 
 func (p *Product) collectBIOS() error {
-	return collectSMBIOSType[smbios.Type0BIOS](0, "BIOS", func(entry smbios.Type0BIOS) {
-		p.BIOS = BIOS{
-			BaseInfo: BaseInfo{
-				Version: entry.Version,
-			},
-			Vendor:           entry.Vendor,
-			ReleaseDate:      entry.ReleaseDate,
-			ROMSize:          entry.GetROMSize(),
-			BIOSRevision:     formatRevision(entry.BIOSMajorRelease, entry.BIOSMinorRelease),
-			FirmwareRevision: formatRevision(entry.ECMajorRelease, entry.ECMinorRelease),
-		}
-	})
+	entries, err := smbios.GetTypeData[*smbios.Type0BIOS](0)
+	if err != nil {
+		return fmt.Errorf("got BIOS failed: %w", err)
+	}
+
+	entry := entries[0]
+
+	p.BIOS = BIOS{
+		BaseInfo: BaseInfo{
+			Version: entry.Version,
+		},
+		Vendor:           entry.Vendor,
+		ReleaseDate:      entry.ReleaseDate,
+		ROMSize:          entry.GetROMSize(),
+		BIOSRevision:     formatRevision(entry.BIOSMajorRelease, entry.BIOSMinorRelease),
+		FirmwareRevision: formatRevision(entry.ECMajorRelease, entry.ECMinorRelease),
+	}
+
+	return nil
 }
 
 func (p *Product) collectSystem() error {
-	return collectSMBIOSType[smbios.Type1System](1, "system", func(entry smbios.Type1System) {
+	return collectSMBIOSType[*smbios.Type1System](1, "system", func(entry *smbios.Type1System) {
 		p.System = System{
 			BaseInfo: BaseInfo{
 				Manufacturer: entry.Manufacturer,
@@ -54,7 +61,7 @@ func (p *Product) collectSystem() error {
 }
 
 func (p *Product) collectBaseBoard() error {
-	return collectSMBIOSType[smbios.Type2BaseBoard](2, "baseboard", func(entry smbios.Type2BaseBoard) {
+	return collectSMBIOSType[*smbios.Type2BaseBoard](2, "baseboard", func(entry *smbios.Type2BaseBoard) {
 		p.BaseBoard = BaseBoard{
 			BaseInfo: BaseInfo{
 				Manufacturer: entry.Manufacturer,
@@ -68,7 +75,7 @@ func (p *Product) collectBaseBoard() error {
 }
 
 func (p *Product) collectChassis() error {
-	return collectSMBIOSType[smbios.Type3Chassis](3, "chassis", func(entry smbios.Type3Chassis) {
+	return collectSMBIOSType[*smbios.Type3Chassis](3, "chassis", func(entry *smbios.Type3Chassis) {
 		p.Chassis = Chassis{
 			BaseInfo: BaseInfo{
 				Manufacturer: entry.Manufacturer,

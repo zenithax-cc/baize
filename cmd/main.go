@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/zenithax-cc/baize/internal/collector/product"
+	"github.com/zenithax-cc/baize/internal/collector/raid"
 )
 
 func main() {
 
-	p := product.New()
+	p := raid.New()
 
 	err := p.Collect(context.Background())
 	if err != nil {

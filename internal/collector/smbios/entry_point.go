@@ -4,44 +4,31 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 )
 
 const (
-	intermediateAnchor = "_DMI_"
-
-	checksum32Offset           = 4
-	intermediateRegionStart    = 0x10
-	intermediateRegionEnd      = 0x1F
-	IntermediateChecksumOffset = 5
-)
-
-var (
-	ErrInvalidAnchor   = errors.New("smbios: invalid anchor string")
-	ErrInvalidLength   = errors.New("smbios: invalid entry point length")
-	ErrInvalidChecksum = errors.New("smbios: invalid entry point checksum")
-	ErrDataTooShort    = errors.New("smbios: data too short")
+	anchor32    = "_SM_"
+	anchor64    = "_SM3_"
+	anchor32Len = 0x1f
+	anchor64Len = 0x18
 )
 
 type EntryPoint interface {
-	Table() (address int, length int)
-	Version() (major int, minor int)
+	Table() (int, int)
 	MarshalBinary() ([]byte, error)
-	UnmarshalBinary(data []byte) error
+	UnmarshalBinary([]byte) error
 }
 
 func parseEntryPoint(r io.Reader) (EntryPoint, error) {
 	bf := bufio.NewReader(r)
 	peek, err := bf.Peek(5)
 	if err != nil {
-		return nil, fmt.Errorf("peek anchor: %w", err)
+		return nil, err
 	}
-
 	var eps EntryPoint
 	var data []byte
-
 	switch {
 	case bytes.Equal(peek[:4], []byte(anchor32)):
 		data = make([]byte, anchor32Len)
@@ -50,11 +37,11 @@ func parseEntryPoint(r io.Reader) (EntryPoint, error) {
 		data = make([]byte, anchor64Len)
 		eps = &entryPoint64{}
 	default:
-		return nil, fmt.Errorf("%w: got %q", ErrInvalidAnchor, peek)
+		return nil, fmt.Errorf("invalid anchor string:%v", string(peek[:]))
 	}
 
 	if _, err := io.ReadFull(bf, data); err != nil {
-		return nil, fmt.Errorf("read entry point: %w", err)
+		return nil, err
 	}
 
 	if err := eps.UnmarshalBinary(data); err != nil {
@@ -72,7 +59,7 @@ func calChecksum(data []byte, skipIndex int) uint8 {
 		}
 		sum += b
 	}
-	return -sum
+	return uint8(0x100 - int(sum))
 }
 
 type entryPoint32 struct {
@@ -92,52 +79,40 @@ type entryPoint32 struct {
 	BCDRevision              uint8
 }
 
-func (e *entryPoint32) Table() (address int, length int) {
+func (e *entryPoint32) Table() (int, int) {
 	return int(e.TableAddress), int(e.TableLength)
 }
 
-func (e *entryPoint32) Version() (major int, minor int) {
-	return int(e.MajorVersion), int(e.MinorVersion)
-}
-
 func (e *entryPoint32) MarshalBinary() ([]byte, error) {
-	buf := make([]byte, anchor32Len)
-	writer := bytes.NewBuffer(buf[:0])
-	if err := binary.Write(writer, binary.LittleEndian, e); err != nil {
+	var buf bytes.Buffer
+	if err := binary.Write(&buf, binary.LittleEndian, e); err != nil {
 		return nil, err
 	}
-
-	return writer.Bytes(), nil
+	return buf.Bytes(), nil
 }
 
 func (e *entryPoint32) UnmarshalBinary(data []byte) error {
-	if len(data) < anchor32Len {
-		return fmt.Errorf("%w: got %d,need %d", ErrDataTooShort, len(data), anchor32Len)
-	}
-
 	if err := binary.Read(bytes.NewReader(data), binary.LittleEndian, e); err != nil {
-		return fmt.Errorf("unmarshal: %w", err)
+		return err
 	}
-
 	if !bytes.Equal(e.AnchorString[:], []byte(anchor32)) {
-		return fmt.Errorf("%w: %q", ErrInvalidAnchor, e.AnchorString[:])
+		return fmt.Errorf("invalid anchor string %s", e.AnchorString[:])
 	}
 
 	if e.Length != anchor32Len {
-		return fmt.Errorf("%w: got %d,expected %d", ErrInvalidLength, e.Length, anchor32Len)
+		return fmt.Errorf("invalid length %d", e.Length)
 	}
 
-	if e.Checksum != calChecksum(data[:anchor32Len], checksum32Offset) {
-		return fmt.Errorf("%w: header checksum mismatch", ErrInvalidChecksum)
+	if e.Checksum != calChecksum(data, 4) {
+		return fmt.Errorf("invalid checksum %d", e.Checksum)
 	}
 
-	if !bytes.Equal(e.IntermediateAnchorString[:], []byte(intermediateAnchor)) {
-		return fmt.Errorf("%w: intermediate anchor %q", ErrInvalidAnchor, e.IntermediateAnchorString[:])
+	if !bytes.Equal(e.IntermediateAnchorString[:], []byte("_DMI_")) {
+		return fmt.Errorf("invalid intermediate anchor string %s", e.IntermediateAnchorString[:])
 	}
 
-	intermediateRegion := data[intermediateRegionStart:intermediateRegionEnd]
-	if e.IntermediateChecksum != calChecksum(intermediateRegion, IntermediateChecksumOffset) {
-		return fmt.Errorf("%w: intermediate checksum mismatch", ErrInvalidChecksum)
+	if e.IntermediateChecksum != calChecksum(data[0x10:0x1F], 5) {
+		return fmt.Errorf("invalid intermediate checksum %d", e.IntermediateChecksum)
 	}
 
 	return nil
@@ -152,47 +127,36 @@ type entryPoint64 struct {
 	DocumentationRevision uint8
 	Revision              uint8
 	Reserved              uint8
-	MaximumStructureSize  uint32
+	MaximumStructureSize  uint16
 	TableAddress          uint64
 }
 
-func (e *entryPoint64) Table() (address int, length int) {
+func (e *entryPoint64) Table() (int, int) {
 	return int(e.TableAddress), int(e.MaximumStructureSize)
 }
 
-func (e *entryPoint64) Version() (major int, minor int) {
-	return int(e.MajorVersion), int(e.MinorVersion)
-}
-
 func (e *entryPoint64) MarshalBinary() ([]byte, error) {
-	buf := make([]byte, anchor64Len)
-	writer := bytes.NewBuffer(buf[:0])
-	if err := binary.Write(writer, binary.LittleEndian, e); err != nil {
+	var buf bytes.Buffer
+	if err := binary.Write(&buf, binary.LittleEndian, e); err != nil {
 		return nil, err
 	}
-
-	return writer.Bytes(), nil
+	return buf.Bytes(), nil
 }
 
 func (e *entryPoint64) UnmarshalBinary(data []byte) error {
-	if len(data) < anchor64Len {
-		return fmt.Errorf("%w: got %d,need %d", ErrDataTooShort, len(data), anchor64Len)
-	}
-
 	if err := binary.Read(bytes.NewReader(data), binary.LittleEndian, e); err != nil {
-		return fmt.Errorf("unmarshal: %w", err)
+		return err
 	}
-
 	if !bytes.Equal(e.AnchorString[:], []byte(anchor64)) {
-		return fmt.Errorf("%w: %q", ErrInvalidAnchor, e.AnchorString[:])
+		return fmt.Errorf("invalid anchor string %s", e.AnchorString[:])
 	}
 
 	if e.Length != anchor64Len {
-		return fmt.Errorf("%w: got %d,expected %d", ErrInvalidLength, e.Length, anchor64Len)
+		return fmt.Errorf("invalid length %d", e.Length)
 	}
 
-	if e.Checksum != calChecksum(data[:anchor64Len], 5) {
-		return fmt.Errorf("%w: header checksum mismatch", ErrInvalidChecksum)
+	if e.Checksum != calChecksum(data, 5) {
+		return fmt.Errorf("invalid checksum %d", e.Checksum)
 	}
 
 	return nil
