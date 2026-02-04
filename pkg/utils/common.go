@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -237,6 +238,10 @@ func KGMT(v float64, binary bool) string {
 	return fmt.Sprintf("%f B", v)
 }
 
+// ReadLinkBase 读取符号链接的基本名称
+// 该函数首先通过 os.Readlink 获取符号链接的目标路径，然后使用 filepath.Base 提取该路径的基本名称（最后一部分）
+// path: 符号链接的路径
+// 返回值: 符号链接目标的基本名称和可能的错误
 func ReadLinkBase(path string) (string, error) {
 	link, err := os.Readlink(path)
 	if err != nil {
@@ -244,4 +249,32 @@ func ReadLinkBase(path string) (string, error) {
 	}
 
 	return filepath.Base(link), nil
+}
+
+type Scanner struct {
+	scanner *bufio.Scanner
+}
+
+func NewScanner(r io.Reader) *Scanner {
+	return &Scanner{
+		scanner: bufio.NewScanner(r),
+	}
+}
+
+func (s *Scanner) ParseLine(sep string) (string, string, bool) {
+	if !s.scanner.Scan() {
+		return "", "", false
+	}
+
+	line := strings.TrimSpace(s.scanner.Text())
+	k, v, found := strings.Cut(line, sep)
+	if !found {
+		return line, "", true
+	}
+
+	return strings.TrimSpace(k), strings.TrimSpace(v), true
+}
+
+func (s *Scanner) Err() error {
+	return s.scanner.Err()
 }

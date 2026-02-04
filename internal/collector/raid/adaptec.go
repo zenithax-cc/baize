@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/zenithax-cc/baize/pkg/execute"
+	"github.com/zenithax-cc/baize/pkg/utils"
 )
 
 const (
@@ -19,6 +21,11 @@ const (
 type adaptecController struct {
 	ctrl *controller
 	cid  string
+}
+
+type field struct {
+	key   string
+	value *string
 }
 
 func collectAdaptec(ctx context.Context, i int, c *controller) error {
@@ -114,4 +121,201 @@ func (ac *adaptecController) parseCtrlCard(ctx context.Context) error {
 		return err
 	}
 
+	ctrlFields := []field{
+		{"Controller Status", &ac.ctrl.ControllerStatus},
+		{"Controller Mode", &ac.ctrl.CurrentPersonality},
+		{"Controller Model", &ac.ctrl.ProductName},
+		{"Installed memory", &ac.ctrl.CacheSize},
+		{"BIOS", &ac.ctrl.BiosVersion},
+		{"Firmware", &ac.ctrl.FwVersion},
+	}
+
+	scanner := utils.NewScanner(bytes.NewReader(data))
+	for {
+		k, v, hasMore := scanner.ParseLine(":")
+		if !hasMore {
+			break
+		}
+		if v == "" {
+			continue
+		}
+
+		if k == "Logical devices/Failed/Degraded" {
+			val := strings.SplitN(v, "/", 3)
+			if len(val) >= 3 {
+				ac.ctrl.NumberOfRaid = val[0]
+				ac.ctrl.FailedRaid = val[1]
+				ac.ctrl.DegradedRaid = val[2]
+			}
+		}
+
+		for _, field := range ctrlFields {
+			if field.key == k {
+				*field.value = v
+			}
+		}
+	}
+
+	return scanner.Err()
+}
+
+func (ac *adaptecController) collectCtrlPD(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	data, err := arcconfCmd(ctx, ac.cid, "PD")
+	if err != nil {
+		return err
+	}
+
+	pds := bytes.Split(data, []byte("\n\n"))
+	errs := make([]error, 0, len(pds))
+	for _, pd := range pds {
+		if !bytes.Contains(pd, []byte("Device is a Hard drive")) {
+			continue
+		}
+		if err := ac.parseCtrlPD(ctx, pd); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return nil
+}
+
+func (ac *adaptecController) parseCtrlPD(ctx context.Context, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	res := &physicalDrive{}
+	pdFields := []field{
+		{"State", &res.State},
+		{"Block Size", &res.PhysicalSectorSize},
+		{"Transfer Speed", &res.LinkSpeed},
+		{"Vendor", &res.Vendor},
+		{"Model", &res.ModelName},
+		{"Firmware", &res.FirmwareVersion},
+		{"Serial Number", &res.SN},
+		{"World-wide name", &res.WWN},
+		{"Write cache", &res.WriteCache},
+		{"S.M.A.R.T.", &res.SmartAlert},
+	}
+
+	errs := make([]error, 0, 2)
+
+	scanner := utils.NewScanner(bytes.NewReader(data))
+	for {
+		k, v, hasMore := scanner.ParseLine(":")
+		if !hasMore {
+			break
+		}
+		if v == "" {
+			continue
+		}
+
+		if k == "Reported Location" {
+			val := strings.Split(v, ",")
+			if len(val) >= 2 {
+				res.EnclosureId = strings.Fields(val[0])[1]
+				res.SlotId = strings.Fields(val[1])[1]
+				res.Location = fmt.Sprintf("/c%s/e%s/s%s", ac.cid, res.EnclosureId, res.SlotId)
+			}
+			continue
+		}
+
+		for _, field := range pdFields {
+			if field.key == k {
+				*field.value = v
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		errs = append(errs, err)
+	}
+
+	cid, _ := strconv.Atoi(ac.cid)
+	if err := res.collectSMARTData(SMARTConfig{
+		Option:      "aacraid",
+		BlockDevice: "/dev" + utils.GetOneBlock(),
+		DeviceID:    fmt.Sprintf("%d,%s,%s", cid, res.EnclosureId, res.SlotId),
+	}); err != nil {
+		errs = append(errs, err)
+	}
+
+	ac.ctrl.PhysicalDrives = append(ac.ctrl.PhysicalDrives, res)
+
+	return errors.Join(errs...)
+}
+
+func (ac *adaptecController) collectCtrlLD(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	data, err := arcconfCmd(ctx, ac.cid, "LD")
+	if err != nil {
+		return err
+	}
+
+	lds := bytes.Split(data, []byte("\n\n"))
+	errs := make([]error, 0, len(lds))
+
+	for _, ld := range lds {
+		if !bytes.Contains(ld, []byte("Logical Device number")) {
+			continue
+		}
+		if err := ac.parseCtrlLD(ctx, ld); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (ac *adaptecController) parseCtrlLD(ctx context.Context, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	res := &logicalDrive{}
+	ldFields := []field{
+		{"Logical Device name", &res.Location},
+		{"RAID Level", &res.Type},
+		{"State of Logical Drive", &res.State},
+		{"Size", &res.Capacity},
+	}
+
+	scanner := utils.NewScanner(bytes.NewReader(data))
+	for {
+		k, v, hasMore := scanner.ParseLine(":")
+		if !hasMore {
+			break
+		}
+		if strings.HasPrefix(k, "Logical Device number") {
+			parts := strings.Fields(k)
+			res.VD = parts[len(parts)-1]
+			continue
+		}
+
+		if v == "" {
+			continue
+		}
+
+		if strings.HasPrefix(k, "Segment ") {
+			parts := strings.Fields(v)
+			res.pds = append(res.pds, parts[len(parts)-1])
+			continue
+		}
+
+		for _, field := range ldFields {
+			if field.key == k {
+				*field.value = v
+			}
+		}
+	}
+
+	ac.ctrl.LogicalDrives = append(ac.ctrl.LogicalDrives, res)
+
+	return scanner.Err()
 }
