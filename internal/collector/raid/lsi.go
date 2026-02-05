@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/zenithax-cc/baize/pkg/execute"
+	"github.com/zenithax-cc/baize/pkg/utils"
 )
 
 const (
@@ -227,9 +228,30 @@ func (lc *lsiController) parseCtrlPD(ctx context.Context, pd *pdList) error {
 		return err
 	}
 
-	scanner := utils.NewScanner(bytes.NewReader(data))
+	pdFields := []field{
+		{"Shield Couter", &res.ShieldCounter},
+	}
 
-	return nil
+	scanner := utils.NewScanner(bytes.NewReader(data))
+	for {
+		k, v, hasMore := scanner.ParseLine("=")
+		if !hasMore {
+			break
+		}
+		if v == "" {
+			continue
+		}
+
+		for _, f := range pdFields {
+			if f.key == k {
+				*f.value = v
+			}
+		}
+	}
+
+	lc.ctrl.PhysicalDrives = append(lc.ctrl.PhysicalDrives, res)
+
+	return scanner.Err()
 }
 
 func parseDG(dg any) string {
@@ -245,4 +267,176 @@ func parseDG(dg any) string {
 	default:
 		return "Unknown"
 	}
+}
+
+func (lc *lsiController) collectCtrlLD(ctx context.Context, vds []*vdList) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if len(vds) == 0 {
+		return nil
+	}
+
+	if lc.ctrl.LogicalDrives == nil {
+		lc.ctrl.LogicalDrives = make([]*logicalDrive, 0, len(vds))
+	}
+
+	errs := make([]error, 0, len(vds))
+
+	for _, vd := range vds {
+		if err := lc.parseCtrlLD(ctx, vd); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (lc *lsiController) parseCtrlLD(ctx context.Context, vd *vdList) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	ld := &logicalDrive{
+		Type:     vd.Level,
+		State:    vd.State,
+		Capacity: vd.Size,
+		Consist:  vd.Consist,
+		Access:   vd.Access,
+		Cache:    vd.Cache,
+	}
+
+	dg, vid, found := strings.Cut(vd.DGVD, "/")
+	if !found {
+		return fmt.Errorf("unexcepted DG/VD: %s", vd.DGVD)
+	}
+	ld.DG = dg
+	ld.VD = vid
+	ld.Location = "/c" + lc.cid + "/v" + vid
+
+	data, err := storcliCmd(ctx, ld.Location, "show", "all")
+	if err != nil {
+		return err
+	}
+
+	fields := []field{
+		{"Strip Size", &ld.StripSize},
+	}
+	scanner := utils.NewScanner(bytes.NewReader(data))
+	for {
+		k, v, hasMore := scanner.ParseLine("=")
+		if !hasMore {
+			break
+		}
+		if v == "" {
+			continue
+		}
+
+		for _, f := range fields {
+			if f.key == k {
+				*f.value = v
+			}
+		}
+	}
+
+	lc.ctrl.LogicalDrives = append(lc.ctrl.LogicalDrives, ld)
+
+	return scanner.Err()
+}
+
+func (lc *lsiController) collectCtrlEnclosure(ctx context.Context, ens []*enclosureList) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if len(ens) == 0 {
+		return nil
+	}
+
+	if lc.ctrl.Backplanes == nil {
+		lc.ctrl.Backplanes = make([]*enclosure, 0, len(ens))
+	}
+
+	errs := make([]error, 0, len(ens))
+
+	for _, en := range ens {
+		if err := lc.parseCtrlEnclosure(ctx, en); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (lc *lsiController) parseCtrlEnclosure(ctx context.Context, en *enclosureList) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	enl := &enclosure{
+		ID:                 strconv.Itoa(en.EID),
+		State:              en.State,
+		Slots:              strconv.Itoa(en.Slots),
+		Location:           fmt.Sprintf("/c%s/e%d", lc.cid, en.EID),
+		PhysicalDriveCount: strconv.Itoa(en.PD),
+	}
+
+	data, err := storcliCmd(ctx, enl.Location, "show", "all")
+	if err != nil {
+		return err
+	}
+
+	fields := []field{
+		{"Connerctor Name", &enl.ConnectorName},
+	}
+	scanner := utils.NewScanner(bytes.NewReader(data))
+	for {
+		k, v, hasMore := scanner.ParseLine("=")
+		if !hasMore {
+			break
+		}
+		if v == "" {
+			continue
+		}
+
+		for _, f := range fields {
+			if f.key == k {
+				*f.value = v
+			}
+		}
+	}
+
+	lc.ctrl.Backplanes = append(lc.ctrl.Backplanes, enl)
+
+	return scanner.Err()
+}
+
+func (lc *lsiController) collectCtrlBattery(ctx context.Context, bbus []*cacheVaultInfo) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if len(bbus) == 0 {
+		return nil
+	}
+
+	if lc.ctrl.Battery == nil {
+		lc.ctrl.Battery = make([]*battery, 0, len(bbus))
+	}
+
+	for _, bbu := range bbus {
+		cachevault := &battery{
+			Model:         bbu.Model,
+			State:         bbu.State,
+			Temperature:   bbu.Temp,
+			RetentionTime: bbu.RetentionTime,
+			Mode:          bbu.Mode,
+			MfgDate:       bbu.MfgDate,
+		}
+
+		lc.ctrl.Battery = append(lc.ctrl.Battery, cachevault)
+	}
+
+	return nil
 }
