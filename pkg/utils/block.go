@@ -37,7 +37,7 @@ func (b *blockCache) init() {
 func (b *blockCache) loadBlocks() []string {
 	devices, err := os.ReadDir(sysfsBlock)
 	if err != nil {
-		return getBlockByLsblk()
+		return GetBlockByLsblk()
 	}
 
 	blocks := make([]string, 0, len(devices))
@@ -52,7 +52,7 @@ func (b *blockCache) loadBlocks() []string {
 	return blocks
 }
 
-func getBlockByLsblk() []string {
+func GetBlockByLsblk() []string {
 	output := execute.Command(lsblk, "-d", "-o", "NAME", "-n")
 	if output.Err != nil {
 		return nil

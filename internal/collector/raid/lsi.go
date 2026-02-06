@@ -43,13 +43,14 @@ func collectLSI(ctx context.Context, i int, c *controller) error {
 }
 
 func (lc *lsiController) isFound(i int) bool {
+	pcieAddr := lc.ctrl.PCIe.PCIAddr[2 : len(lc.ctrl.PCIe.PCIAddr)-3]
 	for j := 0; j < i+1; j++ {
 		output := execute.Command(storcli, "/c"+strconv.Itoa(j), "show")
 		if output.Err != nil {
 			continue
 		}
 
-		if len(output.Stdout) > 0 && bytes.Contains(output.Stdout, []byte(lc.ctrl.PCIe.PCIAddr)) {
+		if len(output.Stdout) > 0 && bytes.Contains(output.Stdout, []byte(pcieAddr)) {
 			lc.cid = strconv.Itoa(j)
 			return true
 		}
@@ -229,7 +230,19 @@ func (lc *lsiController) parseCtrlPD(ctx context.Context, pd *pdList) error {
 	}
 
 	pdFields := []field{
-		{"Shield Couter", &res.ShieldCounter},
+		{"Shield Counter", &res.ShieldCounter},
+		{"Media Error Count", &res.MediaErrorCount},
+		{"Other Error Count", &res.OtherErrorCount},
+		{"Predictive Failure Count", &res.PredictiveFailureCount},
+		{"Drive Temperature", &res.Temperature},
+		{"S.M.A.R.T alert flagged by drive", &res.SmartAlert},
+		{"SN", &res.SN},
+		{"WWN", &res.WWN},
+		{"Firmware Revision", &res.FirmwareVersion},
+		{"Device Speed", &res.DeviceSpeed},
+		{"Link Speed", &res.LinkSpeed},
+		{"Logical Sector Size", &res.LogicalSectorSize},
+		{"Physical Sector Size", &res.PhysicalSectorSize},
 	}
 
 	scanner := utils.NewScanner(bytes.NewReader(data))
@@ -249,9 +262,18 @@ func (lc *lsiController) parseCtrlPD(ctx context.Context, pd *pdList) error {
 		}
 	}
 
+	errs := make([]error, 0, 2)
+	if err := scanner.Err(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if err := res.collectSMARTData(SMARTConfig{Option: "megaraid", DeviceID: res.DeviceId, ControllerID: lc.cid}); err != nil {
+		errs = append(errs, err)
+	}
+
 	lc.ctrl.PhysicalDrives = append(lc.ctrl.PhysicalDrives, res)
 
-	return scanner.Err()
+	return errors.Join(errs...)
 }
 
 func parseDG(dg any) string {
@@ -322,6 +344,11 @@ func (lc *lsiController) parseCtrlLD(ctx context.Context, vd *vdList) error {
 
 	fields := []field{
 		{"Strip Size", &ld.StripSize},
+		{"Number of Blocks", &ld.NumberOfBlocks},
+		{"Number of Drives Per Span", &ld.NumberOfDrivesPerSpan},
+		{"OS Drive Name", &ld.MappingFile},
+		{"Creation Date", &ld.CreateTime},
+		{"SCSI NAA Id", &ld.ScsiNaaId},
 	}
 	scanner := utils.NewScanner(bytes.NewReader(data))
 	for {
@@ -389,7 +416,14 @@ func (lc *lsiController) parseCtrlEnclosure(ctx context.Context, en *enclosureLi
 
 	fields := []field{
 		{"Connerctor Name", &enl.ConnectorName},
+		{"Enclosure Type", &enl.EnclosureType},
+		{"Enclosure Serial Number", &enl.EnclosureSerialNumber},
+		{"Device Type", &enl.DeviceType},
+		{"Vendor Identification", &enl.Vendor},
+		{"Product Identification", &enl.ProductIdentification},
+		{"Product Revision Level", &enl.ProductRevisionLevel},
 	}
+
 	scanner := utils.NewScanner(bytes.NewReader(data))
 	for {
 		k, v, hasMore := scanner.ParseLine("=")
