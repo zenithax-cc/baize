@@ -19,14 +19,20 @@ const (
 )
 
 type intelController struct {
+	ctrl []*vroc
+	lds  []*logicalDrive
+	pds  []*physicalDrive
+}
+
+type vroc struct {
 	ctrl    *controller
 	pds     []string
 	pciAddr string
 }
 
 var (
-	intelControllers []*intelController
-	intelOnece       sync.Once
+	intelCtrls = &intelController{}
+	intelOnece sync.Once
 )
 
 func collectIntel(ctx context.Context, i int, c *controller) error {
@@ -34,7 +40,28 @@ func collectIntel(ctx context.Context, i int, c *controller) error {
 		return err
 	}
 
-	return nil
+	return isFoundIntel(ctx, c)
+}
+
+func isFoundIntel(ctx context.Context, c *controller) error {
+	var err error
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+
+	intelOnece.Do(func() {
+		err = intelCtrls.collect(ctx)
+		intelCtrls.associate()
+	})
+
+	for _, ctr := range intelCtrls.ctrl {
+		if ctr.pciAddr == c.PCIe.PCIAddr {
+			ctr.ctrl.PCIe = c.PCIe
+			*c = *ctr.ctrl
+		}
+	}
+
+	return err
 }
 
 func (ic *intelController) collect(ctx context.Context) error {
@@ -42,16 +69,19 @@ func (ic *intelController) collect(ctx context.Context) error {
 		return err
 	}
 
-	errs := make([]error, 0, 4)
+	errs := make([]error, 0, 3)
 	if err := ic.collectCtrlCard(ctx); err != nil {
+		println("ccc")
 		errs = append(errs, err)
 	}
 
 	if err := ic.collectCtrlPD(ctx); err != nil {
+		println("pd")
 		errs = append(errs, err)
 	}
 
 	if err := ic.collectCtrlLD(ctx); err != nil {
+		println("ld")
 		errs = append(errs, err)
 	}
 
@@ -102,6 +132,10 @@ func (ic *intelController) parseCtrlCard(ctx context.Context, data []byte) error
 		return nil
 	}
 
+	res := &vroc{
+		ctrl: &controller{},
+	}
+
 	scanner := utils.NewScanner(bytes.NewReader(data))
 	for {
 		k, v, hasMore := scanner.ParseLine(":")
@@ -115,24 +149,26 @@ func (ic *intelController) parseCtrlCard(ctx context.Context, data []byte) error
 
 		switch {
 		case k == "RAID Levels":
-			ic.ctrl.RaidLevelSupported = v
+			res.ctrl.RaidLevelSupported = v
 		case k == "Max Disks":
-			ic.ctrl.SupportedDrives = v
+			res.ctrl.SupportedDrives = v
 		case k == "I/O Controller":
-			if ic.pciAddr != "" {
+			if res.pciAddr != "" {
 				continue
 			}
-			ic.pciAddr = filepath.Base(strings.Fields(v)[0])
+			res.pciAddr = filepath.Base(strings.Fields(v)[0])
 		case k == "NVMe under VMD":
 			disk := strings.Fields(v)[0]
-			ic.pds = append(ic.pds, disk)
+			res.pds = append(res.pds, disk)
 		case strings.HasPrefix(k, "Port"):
 			if !strings.Contains(v, "no device attached") {
 				disk := strings.Fields(v)[0]
-				ic.pds = append(ic.pds, k+" "+disk)
+				res.pds = append(res.pds, disk+" "+k)
 			}
 		}
 	}
+
+	ic.ctrl = append(ic.ctrl, res)
 
 	return scanner.Err()
 }
@@ -168,6 +204,8 @@ func (ic *intelController) parseCtrlPD(ctx context.Context, pd string) error {
 
 	err := res.collectSMARTData(SMARTConfig{Option: "jbod", BlockDevice: res.MappingFile})
 
+	ic.pds = append(ic.pds, res)
+
 	return err
 }
 
@@ -189,7 +227,7 @@ func (ic *intelController) collectCtrlLD(ctx context.Context) error {
 		if !hasMore {
 			break
 		}
-		if v == "" || strings.HasPrefix(v, "active") {
+		if v == "" || !strings.HasPrefix(v, "active") {
 			continue
 		}
 
@@ -209,6 +247,8 @@ func (ic *intelController) parseCtrlLD(ctx context.Context, md string) error {
 	ld := &logicalDrive{
 		MappingFile: "/dev/" + md,
 	}
+
+	println(ld.MappingFile)
 
 	data, err := mdadmCMD(ctx, "--detail", ld.MappingFile)
 	if err != nil {
@@ -233,8 +273,7 @@ func (ic *intelController) parseCtrlLD(ctx context.Context, md string) error {
 
 		if v == "" && strings.Contains(k, "/dev/") {
 			idx := strings.IndexByte(k, '/')
-			println(v[idx:])
-			ld.pds = append(ld.pds, v[idx:])
+			ld.pds = append(ld.pds, k[idx:])
 		}
 
 		for _, f := range fields {
@@ -248,7 +287,47 @@ func (ic *intelController) parseCtrlLD(ctx context.Context, md string) error {
 		}
 	}
 
-	ic.ctrl.LogicalDrives = append(ic.ctrl.LogicalDrives, ld)
+	ic.lds = append(ic.lds, ld)
 
 	return scanner.Err()
+}
+
+func (ic *intelController) associate() {
+	if len(ic.ctrl) == 0 || len(ic.pds) == 0 || len(ic.lds) == 0 {
+		return
+	}
+
+	for _, ctr := range ic.ctrl {
+		if len(ctr.pds) == 0 {
+			continue
+		}
+		for _, disk := range ctr.pds {
+			parts := strings.Fields(disk)
+			for _, pd := range ic.pds {
+				if pd.MappingFile == parts[0] {
+					if len(parts) > 1 {
+						pd.Location = parts[1]
+					}
+					ctr.ctrl.PhysicalDrives = append(ctr.ctrl.PhysicalDrives, pd)
+				}
+			}
+		}
+	}
+
+	for _, ld := range ic.lds {
+		if len(ld.pds) == 0 {
+			continue
+		}
+
+		for _, ctr := range ic.ctrl {
+			for _, pd := range ctr.ctrl.PhysicalDrives {
+				for _, disk := range ld.pds {
+					if pd.MappingFile == disk {
+						ld.PhysicalDrives = append(ld.PhysicalDrives, pd)
+					}
+				}
+			}
+			ctr.ctrl.LogicalDrives = append(ctr.ctrl.LogicalDrives, ld)
+		}
+	}
 }

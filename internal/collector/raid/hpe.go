@@ -44,13 +44,11 @@ func collectHPE(ctx context.Context, i int, c *controller) error {
 		return fmt.Errorf("hpe controller %s not found", c.PCIe.PCIAddr)
 	}
 
-	if err := hpeCtr.collect(ctx); err != nil {
-		return err
-	}
+	err := hpeCtr.collect(ctx)
 
-	*c = *hpeCtr.ctrl
+	hpeCtr.associate()
 
-	return nil
+	return err
 }
 
 func (h *hpeController) isFound(num int) bool {
@@ -446,4 +444,17 @@ func (h *hpeController) parseCtrlEnclosure(ctx context.Context, el [][]byte) err
 
 	h.ctrl.Backplanes = append(h.ctrl.Backplanes, res)
 	return scanner.Err()
+}
+
+func (h *hpeController) associate() {
+	for _, ld := range h.ctrl.LogicalDrives {
+		for _, disk := range ld.pds {
+			for _, pd := range h.ctrl.PhysicalDrives {
+				if disk == pd.Location {
+					ld.PhysicalDrives = append(ld.PhysicalDrives, pd)
+					break
+				}
+			}
+		}
+	}
 }

@@ -50,7 +50,8 @@ var (
 
 // PCI address format validation regex
 // Format: DDDD:BB:DD.F (domain:bus:device.function)
-var pciAddrRegex = regexp.MustCompile(`^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$`)
+// NVMe devices: DDDDD:BB:DD.F (domain:bus:function)
+var pciAddrRegex = regexp.MustCompile(`^[0-9a-fA-F]{4,5}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$`)
 
 // Driver name validation regex (alphanumeric, underscore, hyphen only)
 var driverNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)

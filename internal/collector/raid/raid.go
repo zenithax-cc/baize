@@ -2,6 +2,7 @@ package raid
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/zenithax-cc/baize/internal/collector/pci"
@@ -135,5 +136,5 @@ func (c *Controllers) collectNVMe(ctx context.Context) error {
 		c.NVMe = append(c.NVMe, nv)
 	}
 
-	return nil
+	return errors.Join(errs...)
 }

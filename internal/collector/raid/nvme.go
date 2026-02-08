@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/zenithax-cc/baize/pkg/utils"
 )
@@ -25,7 +26,7 @@ func (n *nvme) collect() error {
 	var errs []error
 	dirName := dirs[0].Name()
 	n.physicalDrive.MappingFile = "/dev/" + dirName
-	err = n.physicalDrive.collectSMARTData(SMARTConfig{Option: "nvme"})
+	err = n.physicalDrive.collectSMARTData(SMARTConfig{Option: "nvme", BlockDevice: n.physicalDrive.MappingFile})
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -38,7 +39,11 @@ func (n *nvme) collect() error {
 	}
 
 	for _, dir := range namespaceDirs {
-		n.Namespaces = append(n.Namespaces, "/dev"+dir.Name())
+		name := dir.Name()
+		if !strings.HasPrefix(name, "nvme") {
+			continue
+		}
+		n.Namespaces = append(n.Namespaces, "/dev/"+name)
 	}
 
 	return utils.CombineErrors(errs)

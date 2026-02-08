@@ -50,11 +50,10 @@ func collectAdaptec(ctx context.Context, i int, c *controller) error {
 		return fmt.Errorf("adaptec controller %s not found", c.PCIe.PCIAddr)
 	}
 
-	if err := arcCtr.collect(ctx); err != nil {
-		return err
-	}
+	err := arcCtr.collect(ctx)
+	arcCtr.associate()
 
-	return nil
+	return err
 }
 
 func (ac *adaptecController) isFound(i int) bool {
@@ -318,4 +317,17 @@ func (ac *adaptecController) parseCtrlLD(ctx context.Context, data []byte) error
 	ac.ctrl.LogicalDrives = append(ac.ctrl.LogicalDrives, res)
 
 	return scanner.Err()
+}
+
+func (ac *adaptecController) associate() {
+	for _, ld := range ac.ctrl.LogicalDrives {
+		for _, disk := range ld.pds {
+			for _, pd := range ac.ctrl.PhysicalDrives {
+				if disk == pd.SN {
+					ld.PhysicalDrives = append(ld.PhysicalDrives, pd)
+					break
+				}
+			}
+		}
+	}
 }

@@ -22,6 +22,8 @@ type lsiController struct {
 	cid  string
 }
 
+//var pdRegexp = regexp.MustCompile(`^(.+):(\d+)`)
+
 func collectLSI(ctx context.Context, i int, c *controller) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -35,11 +37,10 @@ func collectLSI(ctx context.Context, i int, c *controller) error {
 		return fmt.Errorf("lsi controller %s not found", c.PCIe.PCIAddr)
 	}
 
-	if err := lsiCtr.collect(ctx); err != nil {
-		return err
-	}
+	err := lsiCtr.collect(ctx)
+	lsiCtr.associate()
 
-	return nil
+	return err
 }
 
 func (lc *lsiController) isFound(i int) bool {
@@ -356,6 +357,13 @@ func (lc *lsiController) parseCtrlLD(ctx context.Context, vd *vdList) error {
 		if !hasMore {
 			break
 		}
+		// if v == "" && pdRegexp.MatchString(k) {
+		// 	parts := strings.Fields(k)
+		// 	pd := "/c" + lc.cid + "/e" + strings.ReplaceAll(parts[0], ":", "/s")
+		// 	ld.pds = append(ld.pds, pd)
+		// 	continue
+		// }
+
 		if v == "" {
 			continue
 		}
@@ -473,4 +481,25 @@ func (lc *lsiController) collectCtrlBattery(ctx context.Context, bbus []*cacheVa
 	}
 
 	return nil
+}
+
+func (lc *lsiController) associate() {
+	// for _, ld := range lc.ctrl.LogicalDrives {
+	// 	for _, disk := range ld.pds {
+	// 		for _, pd := range lc.ctrl.PhysicalDrives {
+	// 			if disk == pd.Location {
+	// 				ld.PhysicalDrives = append(ld.PhysicalDrives, pd)
+	// 				break
+	// 			}
+	// 		}
+	// 	}
+	// }
+
+	for _, ld := range lc.ctrl.LogicalDrives {
+		for _, pd := range lc.ctrl.PhysicalDrives {
+			if ld.DG == pd.DG {
+				ld.PhysicalDrives = append(ld.PhysicalDrives, pd)
+			}
+		}
+	}
 }

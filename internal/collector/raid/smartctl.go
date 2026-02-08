@@ -82,7 +82,7 @@ func buildCommands(cmdTpl cmdTemplate, cfg SMARTConfig) string {
 	case cmdTpl.useBlockDev:
 		prefixCmd = fmt.Sprintf(cmdTpl.format, smartctlPath, cfg.BlockDevice, cfg.DeviceID)
 	default:
-		prefixCmd = fmt.Sprintf(cmdTpl.format, smartctlPath, cfg.DeviceID, suffixCmd)
+		prefixCmd = fmt.Sprintf(cmdTpl.format, smartctlPath, cfg.BlockDevice)
 	}
 
 	return prefixCmd
@@ -95,8 +95,6 @@ func (pd *physicalDrive) collectSMARTData(cfg SMARTConfig) error {
 	}
 
 	prefixCmd := buildCommands(cmdTpl, cfg)
-
-	println(prefixCmd)
 
 	output := execute.ShellCommand(prefixCmd + suffixCmd)
 	if output.Err != nil {
@@ -208,7 +206,7 @@ func (bi *BasicInfo) parseBaseInfo(pd *physicalDrive) {
 	pd.LogicalSectorSize = strconv.Itoa(bi.LogicalBlockSize)
 	pd.PhysicalSectorSize = strconv.Itoa(bi.PhysicalBlockSize)
 
-	pd.Temperature = fmt.Sprintf("%d ℃", bi.Temperature.Current)
+	pd.Temperature = fmt.Sprintf("%d °C", bi.Temperature.Current)
 
 	if bi.RotationRate == 0 {
 		pd.RotationRate = ssdMediaType
