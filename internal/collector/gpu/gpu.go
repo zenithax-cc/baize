@@ -18,7 +18,7 @@ type GPU struct {
 }
 
 type GraphicsCard struct {
-	IsOnBoard bool     `json:"is_on_board,omitzero"`
+	IsOnBoard bool     `json:"is_on_board,omitzero" name:"On Board" color:"trueGreen"`
 	PCIe      *pci.PCI `json:"pcie,omitzero"`
 }
 

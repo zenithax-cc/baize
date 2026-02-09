@@ -2,7 +2,7 @@ package cpu
 
 // from lscpu
 type SummaryCPU struct {
-	Architecture   string   `json:"architecture,omitempty"`
+	Architecture   string   `json:"architecture,omitempty" name:"Architecture"`
 	CPUOpMode      string   `json:"cpu_op_mode,omitempty"`
 	AddressSizes   string   `json:"address_sizes,omitempty"`
 	ByteOrder      string   `json:"byte_order,omitempty"`
@@ -28,7 +28,7 @@ type SummaryCPU struct {
 
 // from dmidecode
 type SMBIOSCPUEntry struct {
-	SocketDesignation string         `json:"socket_designation,omitempty"`
+	SocketDesignation string         `json:"socket_designation,omitempty" name:"Socket Designation"`
 	ProcessorType     string         `json:"processor_type,omitempty"`
 	Family            string         `json:"family,omitempty"`
 	Manufacturer      string         `json:"manufacturer,omitempty"`
@@ -51,7 +51,7 @@ type SMBIOSCPU struct {
 	TemperatureCelsius string            `json:"temperature_celsius,omitempty"`
 	PowerState         string            `json:"power_state,omitempty"`
 	Watt               string            `json:"watt,omitempty"`
-	CPUEntries         []*SMBIOSCPUEntry `json:"cpu_entries,omitempty"`
+	CPUEntries         []*SMBIOSCPUEntry `json:"cpu_entries,omitempty" name:"cpu entriy"`
 }
 
 // from turbostat
@@ -64,8 +64,8 @@ type ThreadEntry struct {
 }
 
 type CPU struct {
-	SummaryCPU
-	SMBIOSCPU
-	Diagnose       string `json:"diagnose,omitempty"`
-	DiagnoseDetail string `json:"diagnose_detail,omitempty"`
+	SummaryCPU     `name:"cpu"`
+	SMBIOSCPU      `name:"cpu"`
+	Diagnose       string `json:"diagnose,omitempty" name:"Diagnose" color:"Diagnose"`
+	DiagnoseDetail string `json:"diagnose_detail,omitempty" name:"Diagnose Detail" color:"Diagnose"`
 }

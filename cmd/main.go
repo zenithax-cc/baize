@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zenithax-cc/baize/internal/collector/health"
+	"github.com/zenithax-cc/baize/internal/collector/raid"
 	"github.com/zenithax-cc/baize/pkg/utils"
 )
 
 func main() {
 
-	p := health.New()
+	p := raid.New()
 
 	err := p.Collect(context.Background())
 	if err != nil {

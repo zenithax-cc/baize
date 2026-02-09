@@ -31,13 +31,26 @@ func (sp *StructPrinter) formatValue(colorRule string, value interface{}) string
 		return strValue
 	}
 
-	color := sp.getColor(colorRule)
+	color := sp.getColor(colorRule, strValue)
 
 	return fmt.Sprintf("%s%s%s", color, strValue, ColorReset)
 }
 
-func (sp *StructPrinter) getColor(colorRule string) string {
-	return ""
+func (sp *StructPrinter) getColor(colorRule, value string) string {
+	var color string
+	switch colorRule {
+	case "trueGreen":
+		if value == "true" {
+			color = ColorGreen
+		} else {
+			color = ColorRed
+		}
+	case "DefaultGreen":
+		if value != "" {
+			color = ColorGreen
+		}
+	}
+	return color
 }
 
 func (sp *StructPrinter) printField(indent int, label string, value any, colorRule string) {
@@ -88,6 +101,7 @@ func (sp *StructPrinter) printValue(v reflect.Value, indent int, isRoot bool) {
 
 		name := field.Tag.Get("name")
 		if name == "" {
+			continue
 			name = field.Name
 		}
 
@@ -97,12 +111,19 @@ func (sp *StructPrinter) printValue(v reflect.Value, indent int, isRoot bool) {
 		case reflect.Slice, reflect.Array:
 			for j := 0; j < value.Len(); j++ {
 				elem := value.Index(j)
+				if elem.Kind() == reflect.Ptr {
+					if elem.IsNil() {
+						continue
+					}
+					elem = elem.Elem()
+				}
 				if elem.Kind() == reflect.Struct {
 					elemType := elem.Type()
 					if elemType.NumField() > 0 {
 						elemName := elemType.Field(0).Tag.Get("name")
 						if elemName == "" {
-							elemName = elemType.Field(0).Name
+							continue
+							//elemName = elemType.Field(0).Name
 						}
 						sp.printStructHeader(indent+1, elemName, fmt.Sprintf("%v", elem.Field(0).Interface()))
 					}
@@ -110,7 +131,7 @@ func (sp *StructPrinter) printValue(v reflect.Value, indent int, isRoot bool) {
 				}
 			}
 		case reflect.Struct:
-			sp.printStructHeader(indent, name, "")
+			//sp.printStructHeader(indent, name, "")
 			sp.printValue(value, indent+1, false)
 		default:
 			sp.printField(indent, name, value.Interface(), colorRule)
@@ -126,6 +147,7 @@ func (sp *StructPrinter) printRemainingFields(v reflect.Value, indent int) {
 
 		name := field.Tag.Get("name")
 		if name == "" {
+			continue
 			name = field.Name
 		}
 
@@ -135,20 +157,27 @@ func (sp *StructPrinter) printRemainingFields(v reflect.Value, indent int) {
 		case reflect.Slice, reflect.Array:
 			for j := 0; j < value.Len(); j++ {
 				elem := value.Index(j)
+				if elem.Kind() == reflect.Ptr {
+					if elem.IsNil() {
+						continue
+					}
+					elem = elem.Elem()
+				}
 				if elem.Kind() == reflect.Struct {
 					elemType := elem.Type()
 					if elemType.NumField() > 0 {
 						elemName := elemType.Field(0).Tag.Get("name")
 						if elemName == "" {
-							elemName = elemType.Field(0).Name
+							continue
+							//elemName = elemType.Field(0).Name
 						}
 						sp.printStructHeader(indent, elemName, fmt.Sprintf("%v", elem.Field(0).Interface()))
 					}
+					sp.printRemainingFields(elem, indent+1)
 				}
-				sp.printRemainingFields(elem, indent+1)
 			}
 		case reflect.Struct:
-			sp.printStructHeader(indent, name, "")
+			//sp.printStructHeader(indent, name, "")
 			sp.printRemainingFields(value, indent+1)
 		default:
 			sp.printField(indent, name, value.Interface(), colorRule)

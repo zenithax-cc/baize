@@ -31,9 +31,7 @@ func (p *Product) collectBIOS() error {
 	entry := entries[0]
 
 	p.BIOS = BIOS{
-		BaseInfo: BaseInfo{
-			Version: entry.Version,
-		},
+		Version:          entry.Version,
 		Vendor:           entry.Vendor,
 		ReleaseDate:      entry.ReleaseDate,
 		ROMSize:          entry.GetROMSize(),
@@ -47,15 +45,13 @@ func (p *Product) collectBIOS() error {
 func (p *Product) collectSystem() error {
 	return collectSMBIOSType[*smbios.Type1System](1, "system", func(entry *smbios.Type1System) {
 		p.System = System{
-			BaseInfo: BaseInfo{
-				Manufacturer: entry.Manufacturer,
-				Version:      entry.Version,
-				SerialNumber: entry.SerialNumber,
-			},
-			ProductName: entry.ProductName,
-			UUID:        entry.UUID.String(),
-			WakeupType:  entry.WakeUpType.String(),
-			Family:      entry.Family,
+			Manufacturer: entry.Manufacturer,
+			Version:      entry.Version,
+			SerialNumber: entry.SerialNumber,
+			ProductName:  entry.ProductName,
+			UUID:         entry.UUID.String(),
+			WakeupType:   entry.WakeUpType.String(),
+			Family:       entry.Family,
 		}
 	})
 }
@@ -63,13 +59,11 @@ func (p *Product) collectSystem() error {
 func (p *Product) collectBaseBoard() error {
 	return collectSMBIOSType[*smbios.Type2BaseBoard](2, "baseboard", func(entry *smbios.Type2BaseBoard) {
 		p.BaseBoard = BaseBoard{
-			BaseInfo: BaseInfo{
-				Manufacturer: entry.Manufacturer,
-				Version:      entry.Version,
-				SerialNumber: entry.SerialNumber,
-			},
-			ProductName: entry.Product,
-			Type:        entry.BoardType.String(),
+			Manufacturer: entry.Manufacturer,
+			Version:      entry.Version,
+			SerialNumber: entry.SerialNumber,
+			ProductName:  entry.Product,
+			Type:         entry.BoardType.String(),
 		}
 	})
 }
@@ -77,10 +71,9 @@ func (p *Product) collectBaseBoard() error {
 func (p *Product) collectChassis() error {
 	return collectSMBIOSType[*smbios.Type3Chassis](3, "chassis", func(entry *smbios.Type3Chassis) {
 		p.Chassis = Chassis{
-			BaseInfo: BaseInfo{
-				Manufacturer: entry.Manufacturer,
-				SerialNumber: entry.SerialNumber,
-			},
+
+			Manufacturer:     entry.Manufacturer,
+			SerialNumber:     entry.SerialNumber,
 			Type:             entry.ChassisType.String(),
 			SN:               entry.SerialNumber,
 			AssetTag:         entry.AssetTag,
