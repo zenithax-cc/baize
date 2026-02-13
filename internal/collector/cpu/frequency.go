@@ -1,6 +1,7 @@
 package cpu
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -26,95 +27,78 @@ const (
 	corWatt    = "CorWatt"
 )
 
-type coreFrequency struct {
-	minFreq    int
-	maxFreq    int
-	basedFreq  int
-	watt       float64
-	powerState string
-	threadMap  map[string][]*ThreadEntry
-}
-
-func collectFrequency(ctx context.Context, vendor string) (*coreFrequency, error) {
-	c := &coreFrequency{
-		powerState: powerStatePowerSaving,
-		threadMap:  make(map[string][]*ThreadEntry),
-	}
-
-	tempMap, err := collectTemperature(vendor)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.turbostat(ctx, vendor, tempMap); err != nil {
-		return nil, err
-	}
-
-	return c, nil
-}
-
-func (c *coreFrequency) turbostat(ctx context.Context, vendor string, tempMap map[string]int) error {
+func (c *CPU) collectFromTurbostat(ctx context.Context) error {
 	output := execute.CommandWithContext(ctx, turbostat, "-q", "sleep", "5")
-	if output.AsError() != nil {
+	if output.Err != nil {
 		return output.Err
 	}
 
-	lines := strings.Split(string(output.Stderr), "\n")
-
+	lines := bytes.Split(output.Stderr, []byte("\n"))
 	if len(lines) < 3 {
 		return errors.New("turbostat output is too short")
 	}
-	headers := strings.Fields(lines[1])
-	headerIndex := make(map[string]int)
 
+	headers := strings.Fields(string(lines[1]))
+	headerIndex := make(map[string]int)
 	for i, header := range headers {
 		headerIndex[header] = i
 	}
 
-	summary := strings.Fields(lines[2])
-	if len(summary) != len(headers) {
+	summaryLine := strings.Fields(string(lines[2]))
+	if len(summaryLine) != len(headers) {
 		return errors.New("turbostat summary line does not match headers")
 	}
 
-	c.basedFreq = getIntValue(tscMHz, summary, headerIndex)
-	c.minFreq = getIntValue(bzyMHz, summary, headerIndex)
-	c.maxFreq = getIntValue(bzyMHz, summary, headerIndex)
-	c.watt = getFloatValue(pkgWatt, summary, headerIndex)
+	baseFreq := getIntValue(tscMHz, summaryLine, headerIndex)
+	minFreq := getIntValue(bzyMHz, summaryLine, headerIndex)
+	maxFreq := minFreq
+	c.TemperatureCelsius = fmt.Sprintf("%d °C", getIntValue(coreTmp, summaryLine, headerIndex))
+	c.Watt = summaryLine[headerIndex[pkgWatt]] + " W"
 
 	for _, line := range lines[3:] {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
+		parts := strings.Fields(string(line))
+		if len(parts) == 0 {
 			continue
 		}
 
-		pkgVal := fields[headerIndex[pkg]]
-		coreVal := fields[headerIndex[core]]
-		threadVal := fields[headerIndex[cpu]]
-		coreFreq := getIntValue(bzyMHz, fields, headerIndex)
-
-		if coreFreq > c.maxFreq {
-			c.maxFreq = coreFreq
+		var pkgVal, coreVal, threadVal string
+		if pkgIndex, ok := headerIndex[pkg]; ok {
+			pkgVal = parts[pkgIndex]
 		}
 
-		if coreFreq < c.minFreq {
-			c.minFreq = coreFreq
+		if coreIndex, ok := headerIndex[core]; ok {
+			coreVal = parts[coreIndex]
 		}
 
-		thread := &ThreadEntry{
+		if cpuIndex, ok := headerIndex[cpu]; ok {
+			threadVal = parts[cpuIndex]
+		}
+
+		coreFreq := getIntValue(bzyMHz, parts, headerIndex)
+
+		if coreFreq > maxFreq {
+			maxFreq = coreFreq
+		}
+
+		if coreFreq < minFreq {
+			minFreq = coreFreq
+		}
+
+		c.threads = append(c.threads, &ThreadEntry{
 			PhysicalID:    pkgVal,
 			CoreID:        coreVal,
 			ProcessorID:   threadVal,
 			CoreFrequency: formatMHz(coreFreq),
-		}
-
-		parseCoreTemperature(thread, tempMap, vendor)
-
-		c.threadMap[pkgVal] = append(c.threadMap[pkgVal], thread)
+		})
 	}
 
-	if c.minFreq-50 > c.basedFreq {
-		c.powerState = powerStatePerformance
+	if minFreq-50 > baseFreq {
+		c.PowerState = powerStatePerformance
 	}
+
+	c.MaxFreqMHz = formatMHz(maxFreq)
+	c.MinFreqMHz = formatMHz(minFreq)
+	c.BasedFreqMHz = formatMHz(baseFreq)
 
 	return nil
 }

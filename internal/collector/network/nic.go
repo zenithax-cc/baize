@@ -13,7 +13,7 @@ func collectNic() ([]PhyInterface, error) {
 		return nil, err
 	}
 
-	phyInterfaces := make([]PhyInterface, len(nics))
+	phyInterfaces := make([]PhyInterface, 0, len(nics))
 	var errs []error
 	for _, nic := range nics {
 		itf := PhyInterface{

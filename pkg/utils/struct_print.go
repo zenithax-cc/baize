@@ -18,6 +18,8 @@ type StructPrinter struct {
 	labelWidth int
 }
 
+var SP = NewStructPrinter()
+
 func NewStructPrinter() *StructPrinter {
 	return &StructPrinter{
 		indent:     4,
@@ -61,19 +63,19 @@ func (sp *StructPrinter) printField(indent int, label string, value any, colorRu
 
 func (sp *StructPrinter) printHeader(indent int, label string) {
 	indentStr := strings.Repeat(" ", indent*sp.indent)
-	fmt.Printf("%s[%s]\n", indentStr, label)
+	fmt.Printf("%s[%s]", indentStr, label)
 }
 
 func (sp *StructPrinter) printStructHeader(indent int, label string, value string) {
 	indentStr := strings.Repeat(" ", indent*sp.indent)
-	fmt.Printf("\n%s%-*s: %s\n", indentStr, sp.labelWidth*sp.indent, label, value)
+	fmt.Printf("\n%s%-*s: %s\n", indentStr, sp.labelWidth-indent*sp.indent, label, value)
 }
 
-func (sp *StructPrinter) Print(v any) {
-	sp.printValue(reflect.ValueOf(v), 0, true)
+func (sp *StructPrinter) Print(v any, outputType string) {
+	sp.printValue(reflect.ValueOf(v), outputType, 0, true)
 }
 
-func (sp *StructPrinter) printValue(v reflect.Value, indent int, isRoot bool) {
+func (sp *StructPrinter) printValue(v reflect.Value, outputType string, indent int, isRoot bool) {
 	if v.Kind() == reflect.Ptr {
 		if v.IsNil() {
 			return
@@ -99,13 +101,10 @@ func (sp *StructPrinter) printValue(v reflect.Value, indent int, isRoot bool) {
 		field := t.Field(i)
 		value := v.Field(i)
 
-		name := field.Tag.Get("name")
-		if name == "" {
+		name, colorRule, ok := parseFieldTag(field, outputType)
+		if !ok {
 			continue
-			name = field.Name
 		}
-
-		colorRule := field.Tag.Get("color")
 
 		switch value.Kind() {
 		case reflect.Slice, reflect.Array:
@@ -127,31 +126,35 @@ func (sp *StructPrinter) printValue(v reflect.Value, indent int, isRoot bool) {
 						}
 						sp.printStructHeader(indent+1, elemName, fmt.Sprintf("%v", elem.Field(0).Interface()))
 					}
-					sp.printRemainingFields(elem, indent+2)
+					sp.printRemainingFields(elem, outputType, indent+2)
+				}
+
+				if elem.Kind() == reflect.String {
+					sp.printField(indent+2, name, elem.Interface(), colorRule)
 				}
 			}
 		case reflect.Struct:
 			//sp.printStructHeader(indent, name, "")
-			sp.printValue(value, indent+1, false)
+			sp.printValue(value, outputType, indent+1, false)
 		default:
+			if IsEmpty(value) {
+				continue
+			}
 			sp.printField(indent, name, value.Interface(), colorRule)
 		}
 	}
 }
 
-func (sp *StructPrinter) printRemainingFields(v reflect.Value, indent int) {
+func (sp *StructPrinter) printRemainingFields(v reflect.Value, outputType string, indent int) {
 	t := v.Type()
 	for i := 1; i < v.NumField(); i++ {
 		field := t.Field(i)
 		value := v.Field(i)
 
-		name := field.Tag.Get("name")
-		if name == "" {
+		name, colorRule, ok := parseFieldTag(field, outputType)
+		if !ok {
 			continue
-			name = field.Name
 		}
-
-		colorRule := field.Tag.Get("color")
 
 		switch value.Kind() {
 		case reflect.Slice, reflect.Array:
@@ -173,14 +176,38 @@ func (sp *StructPrinter) printRemainingFields(v reflect.Value, indent int) {
 						}
 						sp.printStructHeader(indent, elemName, fmt.Sprintf("%v", elem.Field(0).Interface()))
 					}
-					sp.printRemainingFields(elem, indent+1)
+					sp.printRemainingFields(elem, outputType, indent+1)
 				}
 			}
 		case reflect.Struct:
 			//sp.printStructHeader(indent, name, "")
-			sp.printRemainingFields(value, indent+1)
+			sp.printRemainingFields(value, outputType, indent+1)
 		default:
+			if IsEmpty(value) {
+				continue
+			}
 			sp.printField(indent, name, value.Interface(), colorRule)
 		}
 	}
+}
+
+func parseFieldTag(field reflect.StructField, outputType string) (string, string, bool) {
+	name := field.Tag.Get("name")
+	color := field.Tag.Get("color")
+	output := field.Tag.Get("output")
+	var ot string
+	switch output {
+	case "both":
+		ot = outputType
+	case "brief":
+		ot = "brief"
+	case "detail":
+		ot = "detail"
+	}
+
+	if ot != outputType || name == "" {
+		return "", "", false
+	}
+
+	return name, color, true
 }

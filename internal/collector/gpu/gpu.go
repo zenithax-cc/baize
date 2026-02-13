@@ -64,6 +64,20 @@ func (g *GPU) Collect(ctx context.Context) error {
 	return errNotFound
 }
 
+func (g *GPU) Name() string {
+	return "cpu"
+}
+
+func (g *GPU) JSON() error {
+	return utils.JSONPrintln(g)
+}
+
+func (g *GPU) DetailPrintln() {
+	utils.SP.Print(g, "detail")
+}
+
+func (c *GPU) BriefPrintln() {}
+
 func (g *GPU) fromDrm(ctx context.Context) error {
 	dirEntries, err := os.ReadDir(drmDir)
 	if err != nil {

@@ -1,7 +1,7 @@
 package memory
 
 import (
-	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -12,53 +12,51 @@ import (
 
 const procMeminfo = "/proc/meminfo"
 
-func collectMeminfo() (MemoryInfo, error) {
-	content, err := os.Open(procMeminfo)
+func (m *Memory) collectFromMeminfo(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	file, err := os.Open(procMeminfo)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return MemoryInfo{}, nil
-		}
-		return MemoryInfo{}, err
+		return err
 	}
-	defer content.Close()
+	defer file.Close()
 
-	scanner := bufio.NewScanner(content)
-	var res MemoryInfo
 	fieldsMap := map[string]*string{
-		"MemTotal":        &res.MemTotal,
-		"MemAvailable":    &res.MemAvailable,
-		"SwapTotal":       &res.SwapTotal,
-		"Buffers":         &res.Buffer,
-		"Cached":          &res.Cached,
-		"Slab":            &res.Slab,
-		"SReclaimable":    &res.SReclaimable,
-		"SUnreclaim":      &res.SUnreclaim,
-		"KReclaimable":    &res.KReclaimable,
-		"KernelStack":     &res.KernelStack,
-		"PageTables":      &res.PageTables,
-		"Dirty":           &res.Dirty,
-		"Writeback":       &res.Writeback,
-		"HugePages_Total": &res.HPagesTotal,
-		"HugePagessize":   &res.HPageSize,
-		"Hugetlb":         &res.HugeTlb,
+		"MemTotal":        &m.MemTotal,
+		"MemFree":         &m.MemFree,
+		"MemAvailable":    &m.MemAvailable,
+		"SwapCached":      &m.SwapCached,
+		"SwapTotal":       &m.SwapTotal,
+		"SwapFree":        &m.SwapFree,
+		"Buffers":         &m.Buffer,
+		"Cached":          &m.Cached,
+		"Slab":            &m.Slab,
+		"SReclaimable":    &m.SReclaimable,
+		"SUnreclaim":      &m.SUnreclaim,
+		"KReclaimable":    &m.KReclaimable,
+		"KernelStack":     &m.KernelStack,
+		"PageTables":      &m.PageTables,
+		"Dirty":           &m.Dirty,
+		"Writeback":       &m.Writeback,
+		"HugePages_Total": &m.HPagesTotal,
+		"HugePagessize":   &m.HPageSize,
+		"Hugetlb":         &m.HugeTlb,
 	}
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
+	scanner := utils.NewScanner(file)
+	for {
+		k, v, hasMore := scanner.ParseLine(":")
+		if !hasMore {
+			break
 		}
 
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-
-		if ptr, exists := fieldsMap[key]; exists {
-			*ptr = convertUnit(value)
+		if ptr, exists := fieldsMap[k]; exists {
+			*ptr = convertUnit(v)
 		}
 	}
 
-	return res, scanner.Err()
+	return scanner.Err()
 }
 
 func convertUnit(value string) string {

@@ -6,17 +6,11 @@ import (
 
 // Core Types
 
-// Network represents complete network configuration including physical,
-// virtual, and bonded interfaces. It provides indexed access for O(1) lookups.
+// Network represents complete network configuration including physical
 type Network struct {
 	NetInterfaces  []NetInterface  `json:"net_interfaces,omitzero"`
 	PhyInterfaces  []PhyInterface  `json:"phy_interfaces,omitzero"`
 	BondInterfaces []BondInterface `json:"bond_interfaces,omitzero"`
-
-	// Indexes for O(1) lookup - not serialized to JSON
-	netInterfaceIdx  map[string]*NetInterface  `json:"-"`
-	phyInterfaceIdx  map[string]*PhyInterface  `json:"-"`
-	bondInterfaceIdx map[string]*BondInterface `json:"-"`
 }
 
 // NetInterface represents a network interface from /sys/class/net.
@@ -102,9 +96,6 @@ type BondInterface struct {
 	Diagnose           string           `json:"diagnose,omitzero"`
 	DiagnoseDetail     string           `json:"diagnose_detail,omitzero"`
 	SlaveInterfaces    []SlaveInterface `json:"slave_interfaces,omitzero"`
-
-	// Index for O(1) slave lookup
-	slaveIdx map[string]*SlaveInterface `json:"-"`
 }
 
 // SlaveInterface represents a bond slave (member) interface.

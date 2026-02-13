@@ -2,8 +2,10 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/zenithax-cc/baize/pkg/utils"
@@ -11,29 +13,35 @@ import (
 
 const edacPath = "/sys/devices/system/edac/mc/"
 
-func collectEdacMemory(ctx context.Context) ([]*EdacMemoryEntry, error) {
+func (m *Memory) collectEdacMemory(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if _, err := os.Stat(edacPath); err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil
 		}
-		return nil, err
+		return err
 	}
 
 	dimmDirs, err := filepath.Glob(filepath.Join(edacPath, "mc*", "dimm*"))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	edacMemories := make([]*EdacMemoryEntry, 0, len(dimmDirs))
+	m.EdacSlots = strconv.Itoa(len(dimmDirs))
+	errs := make([]error, 0, len(dimmDirs))
 	for _, dimmDir := range dimmDirs {
 		dimm, err := parseDimmDir(dimmDir)
 		if err != nil {
-			continue
+			errs = append(errs, err)
 		}
-		edacMemories = append(edacMemories, dimm)
+
+		m.EdacMemoryEntries = append(m.EdacMemoryEntries, dimm)
 	}
 
-	return edacMemories, nil
+	return errors.Join(errs...)
 }
 
 func parseDimmDir(dimmDir string) (*EdacMemoryEntry, error) {

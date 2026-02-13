@@ -3,11 +3,13 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 )
 
@@ -277,4 +279,52 @@ func (s *Scanner) ParseLine(sep string) (string, string, bool) {
 
 func (s *Scanner) Err() error {
 	return s.scanner.Err()
+}
+
+func JSONPrintln(v any) error {
+	b, err := json.MarshalIndent(v, "  ", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal json: %w", err)
+	}
+
+	fmt.Println(string(b))
+
+	return nil
+}
+
+// IsEmpty 判断 reflect.Value 是否为空
+func IsEmpty(v reflect.Value) bool {
+	// 检查 Value 是否有效
+	if !v.IsValid() {
+		return true
+	}
+
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		return v.IsNil()
+	case reflect.Slice, reflect.Map, reflect.Chan:
+		return v.IsNil() || v.Len() == 0
+	case reflect.Array:
+		return v.Len() == 0
+	case reflect.String:
+		return v.Len() == 0
+	case reflect.Bool:
+		return !v.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.Struct:
+		// 遍历结构体所有字段，判断是否全为空
+		for i := 0; i < v.NumField(); i++ {
+			if !IsEmpty(v.Field(i)) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }

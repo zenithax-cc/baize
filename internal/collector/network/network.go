@@ -1,16 +1,20 @@
 package network
 
-import "github.com/zenithax-cc/baize/pkg/utils"
+import (
+	"context"
+
+	"github.com/zenithax-cc/baize/pkg/utils"
+)
 
 func New() *Network {
 	return &Network{
-		PhyInterfaces:  make([]PhyInterface, 8),
-		BondInterfaces: make([]BondInterface, 2),
-		NetInterfaces:  make([]NetInterface, 16),
+		PhyInterfaces:  make([]PhyInterface, 0, 8),
+		BondInterfaces: make([]BondInterface, 0, 2),
+		NetInterfaces:  make([]NetInterface, 0, 16),
 	}
 }
 
-func (n *Network) Collect() error {
+func (n *Network) Collect(ctx context.Context) error {
 	var errs []error
 	phys, err := collectNic()
 	if err != nil {
@@ -31,4 +35,8 @@ func (n *Network) Collect() error {
 	n.BondInterfaces = bonds
 
 	return utils.CombineErrors(errs)
+}
+
+func (n *Network) JSON() error {
+	return utils.JSONPrintln(n)
 }

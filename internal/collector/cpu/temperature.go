@@ -17,17 +17,6 @@ const (
 	hwmon    = "/sys/class/hwmon"
 )
 
-func collectTemperature(vendor string) (map[string]int, error) {
-	switch vendor {
-	case "AMD":
-		return collectAMDTemperature()
-	case "Intel":
-		return collectIntelTemperature()
-	default:
-		return nil, errors.New("unknown cpu vendor")
-	}
-}
-
 func collectAMDTemperature() (map[string]int, error) {
 	output := execute.ShellCommand(fmt.Sprintf("%s sdr type temperature | egrep 'CPU[0-9]+[_ ]Temp'", ipmitool))
 	if output.Err != nil {
