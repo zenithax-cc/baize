@@ -23,29 +23,29 @@ type Memory struct {
 	HPagesTotal           string               `json:"huge_page_total,omitempty"`
 	HPageSize             string               `json:"huge_page_size,omitempty"`
 	HugeTlb               string               `json:"huge_tlb,omitempty"`
-	Diagnose              string               `json:"diagnose,omitempty" name:"Diagnose" output:"both"`
-	DiagnoseDetail        string               `json:"diagnose_detail,omitempty" name:"Diagnose Detail" output:"both"`
+	Diagnose              string               `json:"diagnose,omitempty" name:"Diagnose" output:"both" color:"Diagnose"`
+	DiagnoseDetail        string               `json:"diagnose_detail,omitempty" name:"Diagnose Detail" output:"both" color:"Diagnose"`
 	EdacSlots             string               `json:"slots,omitempty"`
 	EdacMemorySize        string               `json:"edac_memory_size,omitempty"`
-	PhysicalMemoryEntries []*SmbiosMemoryEntry `json:"physical_memory_entries,omitempty"`
+	PhysicalMemoryEntries []*SmbiosMemoryEntry `json:"physical_memory_entries,omitempty" name:"memorys" output:"detail"`
 	EdacMemoryEntries     []*EdacMemoryEntry   `json:"edac_memory_entries,omitempty"`
 }
 
 type SmbiosMemoryEntry struct {
-	Size              string `json:"size,omitempty"`
-	DeviceType        string `json:"device_type,omitempty"`
-	SerialNumber      string `json:"serial_number,omitempty"`
-	Manufacturer      string `json:"manufacturer,omitempty"`
-	TotalWidth        string `json:"total_width,omitempty"`
-	DataWidth         string `json:"data_width,omitempty"`
-	FormFactor        string `json:"form_factor,omitempty"`
-	DeviceLocator     string `json:"device_locator,omitempty"`
-	BankLocator       string `json:"bank_locator,omitempty"`
-	Type              string `json:"type,omitempty"`
+	Size              string `json:"size,omitempty" name:"Size" output:"detail"`
+	DeviceType        string `json:"device_type,omitempty" name:"Device Type" output:"detail"`
+	SerialNumber      string `json:"serial_number,omitempty" name:"SN" output:"detail"`
+	Manufacturer      string `json:"manufacturer,omitempty" name:"Manufacturer" output:"detail"`
+	TotalWidth        string `json:"total_width,omitempty" name:"Total Width" output:"detail"`
+	DataWidth         string `json:"data_width,omitempty" name:"Data Width" output:"detail"`
+	FormFactor        string `json:"form_factor,omitempty" name:"Form Factor" output:"detail"`
+	DeviceLocator     string `json:"device_locator,omitempty" name:"Device Locator" output:"detail"`
+	BankLocator       string `json:"bank_locator,omitempty" name:"Bank Locator" output:"detail"`
+	Type              string `json:"type,omitempty" name:"Type" output:"detail"`
 	TypeDetail        string `json:"type_detail,omitempty"`
-	Speed             string `json:"speed,omitempty"`
+	Speed             string `json:"speed,omitempty" name:"Speed" output:"detail"`
 	PartNumber        string `json:"part_number,omitempty"`
-	Rank              string `json:"rank,omitempty"`
+	Rank              string `json:"rank,omitempty" name:"Rank" output:"detail"`
 	ConfiguredSpeed   string `json:"configured_speed,omitempty"`
 	ConfiguredVoltage string `json:"configured_voltage,omitempty"`
 	Technology        string `json:"technology,omitempty"`

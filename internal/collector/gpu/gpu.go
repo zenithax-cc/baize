@@ -76,7 +76,10 @@ func (g *GPU) DetailPrintln() {
 	utils.SP.Print(g, "detail")
 }
 
-func (c *GPU) BriefPrintln() {}
+// BriefPrintln prints a concise GPU summary to stdout.
+func (c *GPU) BriefPrintln() {
+	utils.SP.Print(c, "brief")
+}
 
 func (g *GPU) fromDrm(ctx context.Context) error {
 	dirEntries, err := os.ReadDir(drmDir)

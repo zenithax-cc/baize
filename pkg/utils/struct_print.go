@@ -6,20 +6,28 @@ import (
 	"strings"
 )
 
+// ANSI color codes for terminal output.
 const (
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[31m"
 	ColorGreen  = "\033[32m"
 	ColorYellow = "\033[33m"
+	ColorCyan   = "\033[36m"
+	ColorBold   = "\033[1m"
+	ColorDim    = "\033[2m"
 )
 
+// StructPrinter renders struct data to the terminal in a human-readable
+// key-value format, driven by struct field tags.
 type StructPrinter struct {
 	indent     int
 	labelWidth int
 }
 
+// SP is the global StructPrinter instance used by all modules.
 var SP = NewStructPrinter()
 
+// NewStructPrinter creates a StructPrinter with default formatting parameters.
 func NewStructPrinter() *StructPrinter {
 	return &StructPrinter{
 		indent:     4,
@@ -27,6 +35,7 @@ func NewStructPrinter() *StructPrinter {
 	}
 }
 
+// formatValue applies optional color rules to the display value.
 func (sp *StructPrinter) formatValue(colorRule string, value interface{}) string {
 	strValue := fmt.Sprintf("%v", value)
 	if colorRule == "" {
@@ -34,47 +43,72 @@ func (sp *StructPrinter) formatValue(colorRule string, value interface{}) string
 	}
 
 	color := sp.getColor(colorRule, strValue)
+	if color == "" {
+		return strValue
+	}
 
 	return fmt.Sprintf("%s%s%s", color, strValue, ColorReset)
 }
 
+// getColor returns the ANSI color code for a given rule and value.
 func (sp *StructPrinter) getColor(colorRule, value string) string {
-	var color string
 	switch colorRule {
 	case "trueGreen":
 		if value == "true" {
-			color = ColorGreen
-		} else {
-			color = ColorRed
+			return ColorGreen
 		}
-	case "DefaultGreen":
+		return ColorRed
+	case "DefaultGreen", "defaultGreen":
 		if value != "" {
-			color = ColorGreen
+			return ColorGreen
+		}
+	case "powerGreen":
+		if value == "Performance" {
+			return ColorGreen
+		}
+		return ColorYellow
+	case "Diagnose":
+		switch {
+		case value == "Healthy" || value == "OK":
+			return ColorGreen
+		case value == "Unhealthy" || value == "WARNING" || strings.HasPrefix(value, "Unhealthy"):
+			return ColorRed
+		default:
+			return ColorYellow
 		}
 	}
-	return color
+	return ""
 }
 
+// printField prints a single labeled value line with proper indentation and alignment.
 func (sp *StructPrinter) printField(indent int, label string, value any, colorRule string) {
 	indentStr := strings.Repeat(" ", indent*sp.indent)
 	formattedValue := sp.formatValue(colorRule, value)
 	fmt.Printf("%s%-*s: %v\n", indentStr, sp.labelWidth-indent*sp.indent, label, formattedValue)
 }
 
+// printHeader prints a module section header with visual separators.
 func (sp *StructPrinter) printHeader(indent int, label string) {
 	indentStr := strings.Repeat(" ", indent*sp.indent)
-	fmt.Printf("%s[%s]", indentStr, label)
+	line := strings.Repeat("─", 50)
+	fmt.Printf("\n%s%s%s%s\n", indentStr, ColorCyan, line, ColorReset)
+	fmt.Printf("%s%s[%s]%s\n", indentStr, ColorBold, label, ColorReset)
+	fmt.Printf("%s%s%s%s\n", indentStr, ColorCyan, line, ColorReset)
 }
 
+// printStructHeader prints a sub-section header for slice elements (e.g., each DIMM, each NIC).
 func (sp *StructPrinter) printStructHeader(indent int, label string, value string) {
 	indentStr := strings.Repeat(" ", indent*sp.indent)
-	fmt.Printf("\n%s%-*s: %s\n", indentStr, sp.labelWidth-indent*sp.indent, label, value)
+	fmt.Printf("\n%s%s%-*s%s: %s\n", indentStr, ColorBold, sp.labelWidth-indent*sp.indent, label, ColorReset, value)
 }
 
+// Print is the main entry point for rendering a struct to the terminal.
 func (sp *StructPrinter) Print(v any, outputType string) {
 	sp.printValue(reflect.ValueOf(v), outputType, 0, true)
 }
 
+// printValue recursively traverses struct fields and prints them according
+// to their output/name/color tags.
 func (sp *StructPrinter) printValue(v reflect.Value, outputType string, indent int, isRoot bool) {
 	if v.Kind() == reflect.Ptr {
 		if v.IsNil() {
@@ -122,7 +156,6 @@ func (sp *StructPrinter) printValue(v reflect.Value, outputType string, indent i
 						elemName := elemType.Field(0).Tag.Get("name")
 						if elemName == "" {
 							continue
-							//elemName = elemType.Field(0).Name
 						}
 						sp.printStructHeader(indent+1, elemName, fmt.Sprintf("%v", elem.Field(0).Interface()))
 					}
@@ -134,7 +167,6 @@ func (sp *StructPrinter) printValue(v reflect.Value, outputType string, indent i
 				}
 			}
 		case reflect.Struct:
-			//sp.printStructHeader(indent, name, "")
 			sp.printValue(value, outputType, indent+1, false)
 		default:
 			if IsEmpty(value) {
@@ -145,6 +177,8 @@ func (sp *StructPrinter) printValue(v reflect.Value, outputType string, indent i
 	}
 }
 
+// printRemainingFields prints all fields of a struct except the first one
+// (which is typically used as the header/identifier).
 func (sp *StructPrinter) printRemainingFields(v reflect.Value, outputType string, indent int) {
 	t := v.Type()
 	for i := 1; i < v.NumField(); i++ {
@@ -172,7 +206,6 @@ func (sp *StructPrinter) printRemainingFields(v reflect.Value, outputType string
 						elemName := elemType.Field(0).Tag.Get("name")
 						if elemName == "" {
 							continue
-							//elemName = elemType.Field(0).Name
 						}
 						sp.printStructHeader(indent, elemName, fmt.Sprintf("%v", elem.Field(0).Interface()))
 					}
@@ -180,8 +213,11 @@ func (sp *StructPrinter) printRemainingFields(v reflect.Value, outputType string
 				}
 			}
 		case reflect.Struct:
-			//sp.printStructHeader(indent, name, "")
 			sp.printRemainingFields(value, outputType, indent+1)
+		case reflect.Ptr:
+			if !value.IsNil() {
+				sp.printRemainingFields(value.Elem(), outputType, indent+1)
+			}
 		default:
 			if IsEmpty(value) {
 				continue
@@ -191,6 +227,9 @@ func (sp *StructPrinter) printRemainingFields(v reflect.Value, outputType string
 	}
 }
 
+// parseFieldTag extracts display metadata from struct field tags.
+// Returns the display name, color rule, and whether the field should be shown
+// for the given outputType ("brief" or "detail").
 func parseFieldTag(field reflect.StructField, outputType string) (string, string, bool) {
 	name := field.Tag.Get("name")
 	color := field.Tag.Get("color")

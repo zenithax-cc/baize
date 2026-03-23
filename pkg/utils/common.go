@@ -132,12 +132,21 @@ func ReadLinesOffsetN(path string, offset, n int64) ([]string, error) {
 	return res, nil
 }
 
+// ReadOneLineFile reads the first (and typically only) line from a small sysfs/procfs
+// file. It uses os.ReadFile directly to avoid the overhead of a bufio scanner for
+// files that are guaranteed to be small (< 4 KB).
 func ReadOneLineFile(path string) (string, error) {
-	lines, err := ReadLinesOffsetN(path, 0, 1)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(lines[0]), nil
+	// Trim newline and surrounding whitespace.
+	line := strings.TrimSpace(string(data))
+	// Return only the first line if the file has multiple lines.
+	if idx := strings.IndexByte(line, '\n'); idx >= 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+	return line, nil
 }
 
 func ReadLines(path string) ([]string, error) {

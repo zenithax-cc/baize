@@ -1,10 +1,11 @@
+// Package cpu - frequency.go collects per-thread CPU frequency and power metrics
+// using the turbostat tool and parses its columnar stderr output.
 package cpu
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -14,21 +15,22 @@ import (
 const (
 	turbostat = "/usr/sbin/turbostat"
 
-	timeSuffix = "sec"
-	pkg        = "Package"
-	die        = "Die"
-	core       = "Core"
-	cpu        = "CPU"
-	bzyMHz     = "Bzy_MHz"
-	tscMHz     = "TSC_MHz"
-	coreTmp    = "CoreTmp"
-	pkgTmp     = "PkgTmp"
-	pkgWatt    = "PkgWatt"
-	corWatt    = "CorWatt"
+	pkg     = "Package"
+	core    = "Core"
+	cpu     = "CPU"
+	bzyMHz  = "Bzy_MHz"
+	tscMHz  = "TSC_MHz"
+	coreTmp = "CoreTmp"
+	pkgWatt = "PkgWatt"
 )
 
+// collectFromTurbostat runs turbostat with a 1-second sampling interval to collect
+// per-thread CPU frequency, package temperature, and power consumption.
+// turbostat writes its output to stderr; stdout is discarded.
 func (c *CPU) collectFromTurbostat(ctx context.Context) error {
-	output := execute.CommandWithContext(ctx, turbostat, "-q", "sleep", "5")
+	// Use a 1-second sample instead of 5 seconds to reduce collection latency
+	// while still providing a representative frequency snapshot.
+	output := execute.CommandWithContext(ctx, turbostat, "-q", "sleep", "1")
 	if output.Err != nil {
 		return output.Err
 	}
@@ -38,8 +40,13 @@ func (c *CPU) collectFromTurbostat(ctx context.Context) error {
 		return errors.New("turbostat output is too short")
 	}
 
+	// Line 1 (index 1) is the column header; line 2 (index 2) is the system summary.
 	headers := strings.Fields(string(lines[1]))
-	headerIndex := make(map[string]int)
+	if len(headers) == 0 {
+		return errors.New("turbostat header line is empty")
+	}
+
+	headerIndex := make(map[string]int, len(headers))
 	for i, header := range headers {
 		headerIndex[header] = i
 	}
@@ -52,8 +59,23 @@ func (c *CPU) collectFromTurbostat(ctx context.Context) error {
 	baseFreq := getIntValue(tscMHz, summaryLine, headerIndex)
 	minFreq := getIntValue(bzyMHz, summaryLine, headerIndex)
 	maxFreq := minFreq
-	c.TemperatureCelsius = fmt.Sprintf("%d °C", getIntValue(coreTmp, summaryLine, headerIndex))
-	c.Watt = summaryLine[headerIndex[pkgWatt]] + " W"
+
+	// Populate package-level temperature and power from the summary line.
+	if idx, ok := headerIndex[coreTmp]; ok && idx < len(summaryLine) {
+		c.TemperatureCelsius = summaryLine[idx] + " °C"
+	}
+	if idx, ok := headerIndex[pkgWatt]; ok && idx < len(summaryLine) {
+		c.Watt = summaryLine[idx] + " W"
+	}
+
+	// Cache header indices used in the inner loop to avoid repeated map lookups.
+	pkgIdx, hasPkg := headerIndex[pkg]
+	coreIdx, hasCore := headerIndex[core]
+	cpuIdx, hasCPU := headerIndex[cpu]
+	bzyIdx, hasBzy := headerIndex[bzyMHz]
+
+	// Pre-allocate thread slice assuming remaining lines are all thread rows.
+	c.threads = make([]*ThreadEntry, 0, len(lines)-3)
 
 	for _, line := range lines[3:] {
 		parts := strings.Fields(string(line))
@@ -62,25 +84,25 @@ func (c *CPU) collectFromTurbostat(ctx context.Context) error {
 		}
 
 		var pkgVal, coreVal, threadVal string
-		if pkgIndex, ok := headerIndex[pkg]; ok {
-			pkgVal = parts[pkgIndex]
+		if hasPkg && pkgIdx < len(parts) {
+			pkgVal = parts[pkgIdx]
+		}
+		if hasCore && coreIdx < len(parts) {
+			coreVal = parts[coreIdx]
+		}
+		if hasCPU && cpuIdx < len(parts) {
+			threadVal = parts[cpuIdx]
 		}
 
-		if coreIndex, ok := headerIndex[core]; ok {
-			coreVal = parts[coreIndex]
+		var coreFreq int
+		if hasBzy && bzyIdx < len(parts) {
+			coreFreq, _ = strconv.Atoi(parts[bzyIdx])
 		}
-
-		if cpuIndex, ok := headerIndex[cpu]; ok {
-			threadVal = parts[cpuIndex]
-		}
-
-		coreFreq := getIntValue(bzyMHz, parts, headerIndex)
 
 		if coreFreq > maxFreq {
 			maxFreq = coreFreq
 		}
-
-		if coreFreq < minFreq {
+		if coreFreq > 0 && coreFreq < minFreq {
 			minFreq = coreFreq
 		}
 
@@ -92,6 +114,8 @@ func (c *CPU) collectFromTurbostat(ctx context.Context) error {
 		})
 	}
 
+	// If the minimum busy frequency is notably above the base (TSC) frequency,
+	// the CPU is running in performance governor mode.
 	if minFreq-50 > baseFreq {
 		c.PowerState = powerStatePerformance
 	}
@@ -103,33 +127,22 @@ func (c *CPU) collectFromTurbostat(ctx context.Context) error {
 	return nil
 }
 
+// getIntValue safely retrieves an integer value from a parsed turbostat line
+// using the pre-built header index map. Returns -1 if the key is not found.
 func getIntValue(key string, header []string, headerIndex map[string]int) int {
 	if index, ok := headerIndex[key]; ok && index < len(header) {
 		v, _ := strconv.Atoi(header[index])
 		return v
 	}
-
 	return -1
 }
 
+// getFloatValue safely retrieves a float64 value from a parsed turbostat line
+// using the pre-built header index map. Returns -1 if the key is not found.
 func getFloatValue(key string, header []string, headerIndex map[string]int) float64 {
 	if index, ok := headerIndex[key]; ok && index < len(header) {
 		v, _ := strconv.ParseFloat(header[index], 64)
 		return v
 	}
-
 	return -1
-}
-
-func parseCoreTemperature(thread *ThreadEntry, tempMap map[string]int, vendor string) {
-	var key string
-	if vendor == "Intel" {
-		key = fmt.Sprintf("%s-%s", thread.PhysicalID, thread.CoreID)
-	} else {
-		key = thread.PhysicalID
-	}
-
-	if temp, ok := tempMap[key]; ok {
-		thread.Temperature = fmt.Sprintf("%d °C", temp)
-	}
 }

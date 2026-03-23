@@ -1,3 +1,5 @@
+// Package cpu - temperature.go collects per-core and per-package CPU temperatures
+// from vendor-specific sources: IPMI (AMD) and hwmon coretemp sysfs (Intel).
 package cpu
 
 import (
@@ -17,14 +19,16 @@ const (
 	hwmon    = "/sys/class/hwmon"
 )
 
+// collectAMDTemperature reads per-socket CPU temperatures via IPMI SDR.
+// It returns a map of normalized socket ID (e.g. "0", "1") to temperature in Celsius.
 func collectAMDTemperature() (map[string]int, error) {
 	output := execute.ShellCommand(fmt.Sprintf("%s sdr type temperature | egrep 'CPU[0-9]+[_ ]Temp'", ipmitool))
 	if output.Err != nil {
 		return nil, output.Err
 	}
 
-	cpus := strings.Split(string(output.Stdout), "\n")
-	if len(cpus) == 0 {
+	cpus := strings.Split(strings.TrimSpace(string(output.Stdout)), "\n")
+	if len(cpus) == 0 || (len(cpus) == 1 && cpus[0] == "") {
 		return nil, errors.New("amd cpu temperature not found")
 	}
 
@@ -35,13 +39,25 @@ func collectAMDTemperature() (map[string]int, error) {
 			continue
 		}
 
-		name := strings.TrimSpace(parts[0])[0:4]
-		value := strings.TrimSpace(parts[4])[0:2]
+		// Extract first 4 chars of sensor name (e.g. "CPU0") as the socket key.
+		name := strings.TrimSpace(parts[0])
+		if len(name) < 4 {
+			continue
+		}
+		name = name[:4]
 
-		println(name, value)
+		// Extract temperature value from the last field (first 2 chars).
+		rawVal := strings.TrimSpace(parts[4])
+		if len(rawVal) < 2 {
+			continue
+		}
+		value := rawVal[:2]
 
 		if socketID, exists := socketIDMap[name]; exists {
-			n, _ := strconv.Atoi(value)
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				continue
+			}
 			res[socketID] = n
 		}
 	}
@@ -49,6 +65,11 @@ func collectAMDTemperature() (map[string]int, error) {
 	return res, nil
 }
 
+// collectIntelTemperature reads per-core and per-package temperatures from the
+// kernel hwmon coretemp sysfs interface (/sys/class/hwmon/hwmon*/temp*_label).
+// Returns a map with two key formats:
+//   - "<pid>-<pid>" for package-level (e.g. "0-0")
+//   - "<pid>-<coreID>" for per-core (e.g. "0-2")
 func collectIntelTemperature() (map[string]int, error) {
 	hwmonDirs, err := os.ReadDir(hwmon)
 	if err != nil {
@@ -58,69 +79,84 @@ func collectIntelTemperature() (map[string]int, error) {
 		return nil, fmt.Errorf("read %s: %w", hwmon, err)
 	}
 
-	coretemp := make([]string, 0, 2)
+	// Collect the hwmon directory names (e.g. "hwmon0") whose symlink targets contain "coretemp".
+	coretempDirs := make([]string, 0, 2)
 	for _, dir := range hwmonDirs {
 		link, err := os.Readlink(filepath.Join(hwmon, dir.Name()))
 		if err != nil {
 			continue
 		}
-
 		if strings.Contains(link, "coretemp") {
-			coretemp = append(coretemp, link)
+			// Store the hwmon entry name (not the resolved link), so we can
+			// correctly glob files under /sys/class/hwmon/<hwmonN>/temp*_label.
+			coretempDirs = append(coretempDirs, dir.Name())
 		}
 	}
 
-	if len(coretemp) == 0 {
-		return nil, fmt.Errorf("no coretemp found")
+	if len(coretempDirs) == 0 {
+		return nil, fmt.Errorf("no coretemp hwmon device found under %s", hwmon)
 	}
 
 	res := make(map[string]int)
 
-	for _, dir := range coretemp {
-		labels, err := filepath.Glob(filepath.Join(hwmon, dir, "temp*_label"))
-		if err != nil {
+	for _, dirName := range coretempDirs {
+		dirPath := filepath.Join(hwmon, dirName)
+		labels, err := filepath.Glob(filepath.Join(dirPath, "temp*_label"))
+		if err != nil || len(labels) == 0 {
 			continue
 		}
 
 		var pid string
-		tmp := make([]struct {
+		type tempEntry struct {
 			id    string
 			value int
-		}, 0, len(labels))
+		}
+		tmp := make([]tempEntry, 0, len(labels))
 
 		for _, label := range labels {
-			var id string
 			content, err := os.ReadFile(label)
 			if err != nil {
 				continue
 			}
+			trimmed := strings.TrimSpace(string(content))
 
+			var id string
 			if bytes.HasPrefix(content, []byte("Package id")) {
-				pid = strings.Fields(strings.TrimSpace(string(content)))[2]
+				// e.g. "Package id 0" → pid = "0"
+				fields := strings.Fields(trimmed)
+				if len(fields) < 3 {
+					continue
+				}
+				pid = fields[2]
 				id = pid
 			} else if bytes.HasPrefix(content, []byte("Core")) {
-				id = strings.Fields(strings.TrimSpace(string(content)))[1]
+				// e.g. "Core 3" → id = "3"
+				fields := strings.Fields(trimmed)
+				if len(fields) < 2 {
+					continue
+				}
+				id = fields[1]
 			} else {
 				continue
 			}
 
-			inputFile := strings.Replace(label, "label", "input", 1)
+			// Read the corresponding temperature input file (millidegrees Celsius).
+			inputFile := strings.Replace(label, "_label", "_input", 1)
 			inputValue, err := os.ReadFile(inputFile)
 			if err != nil {
 				continue
 			}
 
-			value, err := strconv.Atoi(strings.TrimSpace(string(inputValue)))
+			milliDeg, err := strconv.Atoi(strings.TrimSpace(string(inputValue)))
 			if err != nil {
 				continue
 			}
 
-			tmp = append(tmp, struct {
-				id    string
-				value int
-			}{id: id, value: value / 1000})
+			tmp = append(tmp, tempEntry{id: id, value: milliDeg / 1000})
 		}
 
+		// Build result map using "<packageID>-<coreID>" keys.
+		// Package-level entry uses "<pid>-<pid>" so it can be looked up by physical ID alone.
 		for _, t := range tmp {
 			res[fmt.Sprintf("%s-%s", pid, t.id)] = t.value
 		}

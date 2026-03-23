@@ -66,3 +66,19 @@ type Product struct {
 	BaseBoard `json:"base_board" name:"Baseboard"`
 	Chassis   `json:"chassis" name:"Chassis"`
 }
+
+// ProductBrief is a flattened view used for brief terminal output,
+// pulling key fields from System, Chassis, OS, and BIOS.
+type ProductBrief struct {
+	Manufacturer string `json:"-" name:"Manufacturer" output:"both" color:"DefaultGreen"`
+	ProductName  string `json:"-" name:"Product Name" output:"both" color:"DefaultGreen"`
+	SerialNumber string `json:"-" name:"Serial Number" output:"both" color:"DefaultGreen"`
+	UUID         string `json:"-" name:"UUID" output:"both"`
+	AssetTag     string `json:"-" name:"Asset Tag" output:"both" color:"DefaultGreen"`
+	ChassisType  string `json:"-" name:"Chassis Type" output:"both"`
+	OS           string `json:"-" name:"OS" output:"both" color:"DefaultGreen"`
+	Kernel       string `json:"-" name:"Kernel" output:"both"`
+	BIOSVersion  string `json:"-" name:"BIOS Version" output:"both"`
+	BIOSDate     string `json:"-" name:"BIOS Date" output:"both"`
+	HostName     string `json:"-" name:"Hostname" output:"both" color:"DefaultGreen"`
+}

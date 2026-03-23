@@ -1,139 +1,152 @@
+// Package raid provides data structures for RAID controllers, enclosures,
+// batteries, logical drives, physical drives, and NVMe devices.
 package raid
 
 import (
 	"github.com/zenithax-cc/baize/internal/collector/pci"
 )
 
+// Controllers is the top-level container for all discovered storage controllers
+// (vendor RAID cards) and directly-attached NVMe drives.
 type Controllers struct {
 	Controller []*controller `json:"controller,omitempty" name:"Controller"`
 	NVMe       []*nvme       `json:"nvme,omitempty" name:"NVMe"`
 }
 
+// controller holds all information for a single RAID controller card,
+// including firmware versions, drive/RAID statistics, and sub-component lists.
 type controller struct {
-	ID             string `json:"controller_id,omitempty" name:"Controller ID"` // 控制器ID
-	ProductName    string `json:"product_name,omitempty" name:"Product"`        // 产品名称
-	CacheSize      string `json:"cache_size,omitempty" name:"Cache Size"`       // 缓存大小
-	SerialNumber   string `json:"serial_number,omitempty"`                      // 序列号
-	SasAddress     string `json:"sas_address,omitempty"`                        // SAS地址
-	ControllerTime string `json:"controller_time,omitempty"`                    // 控制器当前时间
+	ID             string `json:"controller_id,omitempty" name:"Controller ID"` // Controller identifier
+	ProductName    string `json:"product_name,omitempty" name:"Product"`        // Product model name
+	CacheSize      string `json:"cache_size,omitempty" name:"Cache Size"`       // Onboard cache size
+	SerialNumber   string `json:"serial_number,omitempty"`                      // Controller serial number
+	SasAddress     string `json:"sas_address,omitempty"`                        // SAS address of the controller
+	ControllerTime string `json:"controller_time,omitempty"`                    // Current controller date/time
 
-	Firmware     string `json:"firmware_version,omitempty"` // 固件版本
-	BiosVersion  string `json:"bios_version,omitempty"`     // BIOS版本
-	FwVersion    string `json:"fw_version,omitempty"`       // FW版本
-	ChipRevision string `json:"chip_revision,omitempty"`    // 修订固件版本
+	Firmware     string `json:"firmware_version,omitempty"` // Firmware version
+	BiosVersion  string `json:"bios_version,omitempty"`     // BIOS version
+	FwVersion    string `json:"fw_version,omitempty"`       // Firmware package build version
+	ChipRevision string `json:"chip_revision,omitempty"`    // Chip revision number
 
-	CurrentPersonality string `json:"current_personality,omitempty"` // 当前工作模式
-	ControllerStatus   string `json:"controller_status,omitempty"`   // 控制器当前状态
+	CurrentPersonality string `json:"current_personality,omitempty"` // Current operating mode (RAID/HBA/JBOD)
+	ControllerStatus   string `json:"controller_status,omitempty"`   // Current controller health status
 
-	NumberOfRaid string `json:"number_of_raid,omitempty" name:"Number Of Raid"` // 逻辑硬盘数量
-	FailedRaid   string `json:"failed_raid,omitempty"`                          // 失败的逻辑盘数
-	DegradedRaid string `json:"degraded_raid,omitempty"`                        // 降级的逻辑盘数
-	NumberOfDisk string `json:"number_of_disk,omitempty"`                       // 物理硬盘总数
-	FailedDisk   string `json:"failed_disk,omitempty"`                          // 失败硬盘数
-	CriticalDisk string `json:"critical_disk,omitempty"`                        // 出现致命错误硬盘数
+	NumberOfRaid string `json:"number_of_raid,omitempty" name:"Number Of Raid"` // Total number of logical drives
+	FailedRaid   string `json:"failed_raid,omitempty"`                          // Number of failed logical drives
+	DegradedRaid string `json:"degraded_raid,omitempty"`                        // Number of degraded logical drives
+	NumberOfDisk string `json:"number_of_disk,omitempty"`                       // Total number of physical drives
+	FailedDisk   string `json:"failed_disk,omitempty"`                          // Number of failed physical drives
+	CriticalDisk string `json:"critical_disk,omitempty"`                        // Number of drives with critical errors
 
-	MemoryCorrectableErrors   string `json:"memory_correctable_errors,omitempty"`   // 缓存可纠正错误
-	MemoryUncorrectableErrors string `json:"memory_uncorrectable_errors,omitempty"` // 缓存不可纠正错误
+	MemoryCorrectableErrors   string `json:"memory_correctable_errors,omitempty"`   // Controller cache correctable error count
+	MemoryUncorrectableErrors string `json:"memory_uncorrectable_errors,omitempty"` // Controller cache uncorrectable error count
 
-	FrontEndPortCount string `json:"front_end_port_count,omitempty"` // 前背板接口数量
-	BackendPortCount  string `json:"backend_port_count,omitempty"`   // 后背板接口数量
-	NumberOfBackplane string `json:"number_of_backplane,omitempty"`  // 硬盘背板数量
-	HostInterface     string `json:"host_interface,omitempty"`       // RAID卡接口
-	DeviceInterface   string `json:"device_interface,omitempty"`     // 硬盘接口
+	FrontEndPortCount string `json:"front_end_port_count,omitempty"` // Number of host-side (front-end) ports
+	BackendPortCount  string `json:"backend_port_count,omitempty"`   // Number of device-side (back-end) ports
+	NumberOfBackplane string `json:"number_of_backplane,omitempty"`  // Number of connected backplanes/enclosures
+	HostInterface     string `json:"host_interface,omitempty"`       // Host-side interface type (e.g., PCIe)
+	DeviceInterface   string `json:"device_interface,omitempty"`     // Device-side interface type (e.g., SAS, SATA)
 
-	NVRAMSize string `json:"nvram_size,omitempty"` // NVRAM大小
-	FlashSize string `json:"flash_size,omitempty"` // Flash大小
+	NVRAMSize string `json:"nvram_size,omitempty"` // NVRAM (non-volatile RAM) size
+	FlashSize string `json:"flash_size,omitempty"` // Onboard flash memory size
 
-	SupportedDrives     string `json:"supported_drives,omitempty"`      // 支持硬盘类型
-	RaidLevelSupported  string `json:"raid_level_supported,omitempty"`  // 支持RAID类型
-	SurpportedJBOD      string `json:"supports_jbod,omitempty"`         // 支持JBOD
-	EnableJBOD          string `json:"enable_jbod,omitempty"`           // JBOD使能状态
-	ForeignConfigImport string `json:"foreign_config_import,omitempty"` // 外部配置导入
+	SupportedDrives     string `json:"supported_drives,omitempty"`      // Supported drive interface types
+	RaidLevelSupported  string `json:"raid_level_supported,omitempty"`  // Supported RAID levels
+	SurpportedJBOD      string `json:"supports_jbod,omitempty"`         // Whether JBOD mode is supported
+	EnableJBOD          string `json:"enable_jbod,omitempty"`           // Whether JBOD mode is currently enabled
+	ForeignConfigImport string `json:"foreign_config_import,omitempty"` // Whether foreign configuration import is supported
 
-	Diagnose       string   `json:"diagnose,omitempty"`        // RAID卡健康诊断
-	DiagnoseDetail string   `json:"diagnose_detail,omitempty"` // RAID卡诊断详情
-	PCIe           *pci.PCI `json:"pcie_info,omitempty"`       // PCIe信息
+	Diagnose       string   `json:"diagnose,omitempty"`        // Overall health diagnosis result
+	DiagnoseDetail string   `json:"diagnose_detail,omitempty"` // Detailed diagnosis message
+	PCIe           *pci.PCI `json:"pcie_info,omitempty"`       // Associated PCIe device information
 
-	Backplanes     []*enclosure     `json:"backplanes,omitempty" name:"Enclosure"`           // 背板列表
-	Battery        []*battery       `json:"battery,omitempty" name:"Battery"`                // 电池信息
-	LogicalDrives  []*logicalDrive  `json:"logical_drives,omitempty" name:"Logical Drive"`   // 逻辑硬盘列表
-	PhysicalDrives []*physicalDrive `json:"physical_drives,omitempty" name:"Physical Drive"` // 物理硬盘列表
+	Backplanes     []*enclosure     `json:"backplanes,omitempty" name:"Enclosure"`           // Connected enclosures/backplanes
+	Battery        []*battery       `json:"battery,omitempty" name:"Battery"`                // Battery/cache vault units
+	LogicalDrives  []*logicalDrive  `json:"logical_drives,omitempty" name:"Logical Drive"`   // Configured logical drives (virtual disks)
+	PhysicalDrives []*physicalDrive `json:"physical_drives,omitempty" name:"Physical Drive"` // Physical drives attached to controller
 }
 
+// enclosure represents a disk backplane or JBOD enclosure managed by the controller.
 type enclosure struct {
-	Location              string `json:"location,omitempty" name:"Location"` // 背板位置
-	ID                    string `json:"id,omitempty" name:"ID"`             // 背板ID
-	State                 string `json:"state,omitempty" name:"State"`       // 背板状态
-	Slots                 string `json:"slots,omitempty"`                    // 背板插槽编号
-	PhysicalDriveCount    string `json:"physical_drive_count,omitempty"`     // 背板硬盘总数
-	ConnectorName         string `json:"connector_name,omitempty"`           // 背板接口名
-	EnclosureType         string `json:"enclosure_type,omitempty"`           // 背板类型
-	EnclosureSerialNumber string `json:"enclosure_serial_number,omitempty"`  // 背板SN
-	DeviceType            string `json:"device_type,omitempty"`              // 背板设备类型
-	Vendor                string `json:"vendor,omitempty"`                   // 背板厂商
-	ProductIdentification string `json:"product_identification,omitempty"`   // 背板产品标识
-	ProductRevisionLevel  string `json:"product_revision_level,omitempty"`   // 产品修订级别
+	Location              string `json:"location,omitempty" name:"Location"` // Physical location description
+	ID                    string `json:"id,omitempty" name:"ID"`             // Enclosure identifier (EID)
+	State                 string `json:"state,omitempty" name:"State"`       // Enclosure health state
+	Slots                 string `json:"slots,omitempty"`                    // Total number of drive slots
+	PhysicalDriveCount    string `json:"physical_drive_count,omitempty"`     // Number of drives currently inserted
+	ConnectorName         string `json:"connector_name,omitempty"`           // Connector/port name
+	EnclosureType         string `json:"enclosure_type,omitempty"`           // Enclosure type (e.g., SES, SGPIO)
+	EnclosureSerialNumber string `json:"enclosure_serial_number,omitempty"`  // Enclosure serial number
+	DeviceType            string `json:"device_type,omitempty"`              // Device type string
+	Vendor                string `json:"vendor,omitempty"`                   // Enclosure vendor
+	ProductIdentification string `json:"product_identification,omitempty"`   // Product identification string
+	ProductRevisionLevel  string `json:"product_revision_level,omitempty"`   // Product firmware revision level
 }
 
+// battery represents a RAID controller battery backup unit (BBU) or CacheVault module.
 type battery struct {
-	Model         string `json:"model,omitempty" name:"Model"`             // 型号
-	State         string `json:"state,omitempty" name:"State"`             // 状态
-	Temperature   string `json:"temperature,omitempty" name:"Temperature"` // 温度
-	RetentionTime string `json:"retention_time,omitempty"`                 // 保留时间
-	Mode          string `json:"mode,omitempty"`                           // 工作模式
-	MfgDate       string `json:"mfg_date,omitempty"`                       // 制造日期
+	Model         string `json:"model,omitempty" name:"Model"`             // Battery model
+	State         string `json:"state,omitempty" name:"State"`             // Battery health state
+	Temperature   string `json:"temperature,omitempty" name:"Temperature"` // Battery temperature
+	RetentionTime string `json:"retention_time,omitempty"`                 // Data retention time (capacitor/cache)
+	Mode          string `json:"mode,omitempty"`                           // Operating mode
+	MfgDate       string `json:"mfg_date,omitempty"`                       // Manufacturing date
 }
 
+// logicalDrive represents a virtual disk (VD) configured on a RAID controller,
+// backed by one or more physical drives.
 type logicalDrive struct {
-	Location              string           `json:"location,omitempty" name:"Location"`              // 逻辑硬盘位置
-	VD                    string           `json:"vd,omitempty"`                                    // 逻辑硬盘ID
-	DG                    string           `json:"dg,omitempty"`                                    // 逻辑硬盘组标识
-	Type                  string           `json:"raid_level,omitempty"`                            // RAID级别
-	SpanDepth             string           `json:"span_depth,omitempty"`                            // 逻辑硬盘深度
-	Capacity              string           `json:"capacity,omitempty"`                              // 逻辑硬盘容量
-	State                 string           `json:"state,omitempty"`                                 // 逻辑硬盘状态
-	Access                string           `json:"access,omitempty"`                                // 逻辑硬盘读写状态
-	Consist               string           `json:"consistent,omitempty"`                            // 逻辑硬盘一致性状态
-	Cache                 string           `json:"current_cache_policy,omitempty"`                  // 逻辑硬盘缓存策略
-	StripSize             string           `json:"strip_size,omitempty"`                            // 逻辑硬盘块大小
-	NumberOfBlocks        string           `json:"number_of_blocks,omitempty"`                      // 逻辑硬盘块数量
-	NumberOfDrivesPerSpan string           `json:"number_of_drives_per_span,omitempty"`             // 逻辑硬盘每层硬盘数量
-	NumberOfDrives        string           `json:"number_of_drives,omitempty"`                      // 逻辑硬盘物理硬盘数量
-	MappingFile           string           `json:"mapping_file,omitempty"`                          // 逻辑硬盘对应系统块设备
-	CreateTime            string           `json:"create_time,omitempty"`                           // 逻辑硬盘创建时间
-	ScsiNaaId             string           `json:"scsi_naa_id,omitempty"`                           // 逻辑硬盘SCSI编号
-	PhysicalDrives        []*physicalDrive `json:"physical_drives,omitempty" name:"Physical Drive"` // 逻辑盘包含的物理硬盘
-	pds                   []string
+	Location              string           `json:"location,omitempty" name:"Location"`              // Human-readable location (e.g., "Cx/Dy")
+	VD                    string           `json:"vd,omitempty"`                                    // Virtual drive index
+	DG                    string           `json:"dg,omitempty"`                                    // Drive group identifier
+	Type                  string           `json:"raid_level,omitempty"`                            // RAID level (e.g., "RAID 5")
+	SpanDepth             string           `json:"span_depth,omitempty"`                            // Number of spans in the drive group
+	Capacity              string           `json:"capacity,omitempty"`                              // Total logical drive capacity
+	State                 string           `json:"state,omitempty"`                                 // Current state (Optl, Dgrd, Pdgd, etc.)
+	Access                string           `json:"access,omitempty"`                                // Read/write access state
+	Consist               string           `json:"consistent,omitempty"`                            // Data consistency state
+	Cache                 string           `json:"current_cache_policy,omitempty"`                  // Current cache policy (WT/WB/NORA/RA)
+	StripSize             string           `json:"strip_size,omitempty"`                            // Strip size per physical drive
+	NumberOfBlocks        string           `json:"number_of_blocks,omitempty"`                      // Total number of logical blocks
+	NumberOfDrivesPerSpan string           `json:"number_of_drives_per_span,omitempty"`             // Number of drives per span
+	NumberOfDrives        string           `json:"number_of_drives,omitempty"`                      // Total number of physical drives
+	MappingFile           string           `json:"mapping_file,omitempty"`                          // OS block device path (e.g., /dev/sda)
+	CreateTime            string           `json:"create_time,omitempty"`                           // Creation timestamp
+	ScsiNaaId             string           `json:"scsi_naa_id,omitempty"`                           // SCSI NAA identifier
+	PhysicalDrives        []*physicalDrive `json:"physical_drives,omitempty" name:"Physical Drive"` // Physical drives composing this VD
+	pds                   []string         // Internal list of physical drive identifiers for association
 }
 
+// physicalDrive represents a single physical disk drive (HDD, SSD, or SAS drive)
+// attached to a RAID controller or directly to the system.
 type physicalDrive struct {
-	// 位置和标识信息
-	Location    string `json:"location,omitempty" name:"Location"` // 物理硬盘位置
-	EnclosureId string `json:"enclosure_id,omitempty"`             // 物理硬盘背板编号
-	SlotId      string `json:"slot_id,omitempty"`                  // 物理硬盘插槽编号
-	DeviceId    string `json:"device_id,omitempty"`                // 物理硬盘设备编号
-	DG          string `json:"drive_group,omitempty"`              // 硬盘组
-	DeviceSpeed string `json:"device_speed,omitempty"`             // 物理硬盘设备速度
-	LinkSpeed   string `json:"link_speed,omitempty"`               // 物理硬盘链路速度
+	// Location and identification
+	Location    string `json:"location,omitempty" name:"Location"` // Physical location (e.g., enclosure:slot)
+	EnclosureId string `json:"enclosure_id,omitempty"`             // Enclosure identifier
+	SlotId      string `json:"slot_id,omitempty"`                  // Slot number within the enclosure
+	DeviceId    string `json:"device_id,omitempty"`                // Controller-assigned device ID
+	DG          string `json:"drive_group,omitempty"`              // Drive group this drive belongs to
+	DeviceSpeed string `json:"device_speed,omitempty"`             // Negotiated device speed
+	LinkSpeed   string `json:"link_speed,omitempty"`               // Physical link speed
 
-	// 状态信息
-	State                 string `json:"state,omitempty"`                    // 物理硬盘状态
-	RebuildInfo           string `json:"rebuild_info,omitempty"`             // 物理硬盘重建信息
-	MediaWearoutIndicator string `json:"media_wearout_indicator,omitempty"`  // SSD磨损值
-	AvailableReservdSpace string `json:"available_reserved_space,omitempty"` // 可用的预留闪存数量
+	// Drive state and rebuild information
+	State                 string `json:"state,omitempty"`                    // Current drive state (Onln, Offln, Rbld, etc.)
+	RebuildInfo           string `json:"rebuild_info,omitempty"`             // Rebuild progress information
+	MediaWearoutIndicator string `json:"media_wearout_indicator,omitempty"`  // SSD wear-level indicator (%)
+	AvailableReservdSpace string `json:"available_reserved_space,omitempty"` // Available reserved flash space (SSD)
 
-	// 错误和健康状态
-	ShieldCounter          string `json:"shield_counter,omitempty"`           // 物理硬盘保护计数器
-	OtherErrorCount        string `json:"other_error_count,omitempty"`        // 物理硬盘其他错误数
-	MediaErrorCount        string `json:"media_error_count,omitempty"`        // 物理硬盘物理媒介错误数
-	PredictiveFailureCount string `json:"predictive_failure_count,omitempty"` // 预测失效计数
-	SmartAlert             string `json:"smart_alert,omitempty"`              // 物理硬盘SMART警告
+	// Error counters and health status
+	ShieldCounter          string `json:"shield_counter,omitempty"`           // Shield diagnostics counter
+	OtherErrorCount        string `json:"other_error_count,omitempty"`        // Non-media error count
+	MediaErrorCount        string `json:"media_error_count,omitempty"`        // Media (physical) error count
+	PredictiveFailureCount string `json:"predictive_failure_count,omitempty"` // Predictive failure event count
+	SmartAlert             string `json:"smart_alert,omitempty"`              // SMART alert status
 
-	// 其他信息
-	MappingFile    string `json:"mapping_file,omitempty"`    // 物理硬盘映射系统块设备名称
-	Diagnose       string `json:"diagnose,omitempty"`        // 物理硬盘健康分析接口
-	DiagnoseDetail string `json:"diagnose_detail,omitempty"` // 物理硬盘健康分析详情
+	// Mapping and diagnosis
+	MappingFile    string `json:"mapping_file,omitempty"`    // OS block device mapping (e.g., /dev/sdb)
+	Diagnose       string `json:"diagnose,omitempty"`        // Drive health diagnosis result
+	DiagnoseDetail string `json:"diagnose_detail,omitempty"` // Detailed diagnosis message
 
+	// Drive identity and characteristics (populated from SMART data)
 	Vendor             string `json:"vendor,omitempty"`
 	Product            string `json:"product,omitempty"`
 	ModelName          string `json:"model_name,omitempty"`
@@ -156,8 +169,9 @@ type physicalDrive struct {
 	SMARTAttributes    any    `json:"smart_attributes,omitempty"`
 }
 
+// nvme extends physicalDrive with NVMe-specific fields such as namespaces and PCIe info.
 type nvme struct {
 	physicalDrive
-	Namespaces []string `json:"namespaces,omitempty"` // 命名空间
-	PCIe       *pci.PCI `json:"pcie,omitempty"`       // PCIe信息
+	Namespaces []string `json:"namespaces,omitempty"` // List of NVMe namespace device paths
+	PCIe       *pci.PCI `json:"pcie,omitempty"`       // PCIe device information for this NVMe
 }

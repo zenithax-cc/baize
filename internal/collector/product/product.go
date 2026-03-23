@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/zenithax-cc/baize/pkg/utils"
 )
 
 type collectTask struct {
@@ -60,4 +62,49 @@ func (p *Product) Collect(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (p *Product) Name() string {
+	return "product"
+}
+
+func (p *Product) JSON() error {
+	return utils.JSONPrintln(p)
+}
+
+// DetailPrintln prints full product details (all SMBIOS sub-sections) to stdout.
+func (p *Product) DetailPrintln() {
+	p.BriefPrintln()
+}
+
+// BriefPrintln prints a concise server identity summary to stdout.
+func (p *Product) BriefPrintln() {
+	brief := ProductBrief{
+		Manufacturer: p.System.Manufacturer,
+		ProductName:  p.System.ProductName,
+		SerialNumber: p.System.SerialNumber,
+		UUID:         p.System.UUID,
+		AssetTag:     p.Chassis.AssetTag,
+		ChassisType:  p.Chassis.Type,
+		HostName:     p.OS.HostName,
+		BIOSVersion:  p.BIOS.Version,
+		BIOSDate:     p.BIOS.ReleaseDate,
+	}
+
+	// Build a user-friendly OS display string.
+	if p.OS.PrettyName != "" {
+		brief.OS = p.OS.PrettyName
+	} else if p.OS.Distr != "" {
+		brief.OS = p.OS.Distr + " " + p.OS.MinorVersion
+	}
+
+	brief.Kernel = p.OS.KernelRelease
+
+	wrapper := struct {
+		Products []*ProductBrief `name:"PRODUCT INFO" output:"both"`
+	}{
+		Products: []*ProductBrief{&brief},
+	}
+
+	utils.SP.Print(wrapper, "brief")
 }

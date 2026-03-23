@@ -1,80 +1,72 @@
+// Package main is the entry point for the baize terminal CLI tool.
+// It parses command-line flags and delegates to the collector manager.
 package main
 
 import (
-	"context"
+	"flag"
 	"fmt"
+	"log/slog"
+	"time"
 
-	"github.com/zenithax-cc/baize/internal/collector/network"
+	"github.com/zenithax-cc/baize/pkg/collector"
+	"github.com/zenithax-cc/baize/pkg/utils"
 )
 
-// import (
-// 	"flag"
-// 	"fmt"
-// 	"os"
+// cliCfg holds parsed command-line configuration options.
+type cliCfg struct {
+	module string // target module name, e.g., "cpu", "memory", "all"
+	json   bool   // when true, output results as JSON
+	detail bool   // when true, print detailed view instead of brief summary
+}
 
-// 	"github.com/zenithax-cc/baize/pkg/collector"
-// )
+// newCliCfg registers CLI flags and parses them, returning a populated cliCfg.
+func newCliCfg() *cliCfg {
+	res := &cliCfg{}
+	flag.StringVar(&res.module, "m", "all", "module name")
+	flag.BoolVar(&res.json, "j", false, "output json")
+	flag.BoolVar(&res.detail, "d", false, "output detail")
 
-// type cliCfg struct {
-// 	module string
-// 	json   bool
-// 	detail bool
-// }
+	flag.Parse()
 
-// func newCliCfg() *cliCfg {
-// 	res := &cliCfg{}
-// 	flag.StringVar(&res.module, "m", "all", "module name")
-// 	flag.BoolVar(&res.json, "j", false, "output json")
-// 	flag.BoolVar(&res.detail, "d", false, "output detail")
+	return res
+}
 
-// 	flag.Parse()
-
-// 	return res
-// }
-
-// var supportedModules = map[string]struct{}{
-// 	"all":     {},
-// 	"product": {},
-// 	"cpu":     {},
-// 	"memory":  {},
-// 	"raid":    {},
-// 	"network": {},
-// 	"bond":    {},
-// 	"gpu":     {},
-// 	"health":  {},
-// }
-
-// func isSurpportModule(module string) bool {
-// 	_, exists := supportedModules[module]
-// 	return exists
-// }
-
-// func runCollection() error {
-// 	cfg := newCliCfg()
-
-// 	if !isSurpportModule(cfg.module) {
-// 		flag.Usage()
-// 		return fmt.Errorf("module %s not surpport", cfg.module)
-// 	}
-
-// 	err := collector.NewManager()
-
-// 	return err
-// }
-
-// func main() {
-// 	if err := runCollection(); err != nil {
-// 		fmt.Printf("collection error: %v", err)
-// 		os.Exit(1)
-// 	}
-// }
+// printBanner prints the application header when in terminal (non-JSON) mode.
+func printBanner() {
+	fmt.Printf("\n%s╔══════════════════════════════════════════════════╗%s\n", utils.ColorCyan, utils.ColorReset)
+	fmt.Printf("%s║%s  %s白泽 (Baize) — Hardware Information Collector%s    %s║%s\n",
+		utils.ColorCyan, utils.ColorReset, utils.ColorBold, utils.ColorReset, utils.ColorCyan, utils.ColorReset)
+	fmt.Printf("%s╚══════════════════════════════════════════════════╝%s\n", utils.ColorCyan, utils.ColorReset)
+}
 
 func main() {
-	c := network.New()
+	cfg := newCliCfg()
 
-	if err := c.Collect(context.Background()); err != nil {
-		fmt.Printf("collection error: %v", err)
+	// Build the collector manager with the parsed CLI settings.
+	m := collector.Manager{
+		Module: cfg.module,
+		Detail: cfg.detail,
+		Json:   cfg.json,
+		Log:    slog.Default(),
 	}
 
-	c.JSON()
+	// Print banner for terminal modes only.
+	if !cfg.json {
+		printBanner()
+	}
+
+	start := time.Now()
+
+	if err := collector.NewManager(&m); err != nil {
+		if !cfg.json {
+			fmt.Printf("\n%s⚠ collection warning: %v%s\n", utils.ColorYellow, err, utils.ColorReset)
+		}
+	}
+
+	// Print elapsed time for terminal modes.
+	if !cfg.json {
+		elapsed := time.Since(start)
+		fmt.Printf("\n%s── Collection completed in %.2fs ──%s\n\n",
+			utils.ColorDim, elapsed.Seconds(), utils.ColorReset)
+	}
 }
