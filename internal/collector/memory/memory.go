@@ -83,7 +83,7 @@ func (m *Memory) DetailPrintln() {
 func (m *Memory) BriefPrintln() {
 	memInfo := struct {
 		MemoryInfo   []*Memory `name:"MEMORY INFO" output:"both"`
-		MemoryDetial []string  `name:"Memory Detail" output:"brief"`
+		MemoryDetail []string  `name:"Memory Detail" output:"brief"`
 	}{}
 
 	memInfo.MemoryInfo = append(memInfo.MemoryInfo, m)
@@ -99,7 +99,7 @@ func (m *Memory) BriefPrintln() {
 	}
 
 	for key, count := range memMap {
-		memInfo.MemoryDetial = append(memInfo.MemoryDetial, key+" * "+strconv.Itoa(count))
+		memInfo.MemoryDetail = append(memInfo.MemoryDetail, key+" * "+strconv.Itoa(count))
 	}
 
 	utils.SP.Print(memInfo, "brief")
@@ -141,11 +141,13 @@ func (m *Memory) diagnose() {
 
 	// Check if the OS-visible memory size diverges from SMBIOS physical size
 	// by more than one DIMM's worth (which may indicate a failed/missing module).
-	sysSize, sysErr := toBytes(m.MemTotal)
-	smbiosSize, smbiosErr := toBytes(m.PhysicalMemorySize)
-	if sysErr == nil && smbiosErr == nil {
-		if smbiosSize-sysSize > smbiosSize/len(m.PhysicalMemoryEntries) {
-			msg = append(msg, "has unhealthy memory")
+	if len(m.PhysicalMemoryEntries) > 0 {
+		sysSize, sysErr := toBytes(m.MemTotal)
+		smbiosSize, smbiosErr := toBytes(m.PhysicalMemorySize)
+		if sysErr == nil && smbiosErr == nil {
+			if smbiosSize-sysSize > smbiosSize/len(m.PhysicalMemoryEntries) {
+				msg = append(msg, "has unhealthy memory")
+			}
 		}
 	}
 

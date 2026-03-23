@@ -33,47 +33,58 @@ func collectNic() ([]PhyInterface, error) {
 		go func(idx int, addr string) {
 			defer wg.Done()
 
-			itf := PhyInterface{
-				DeviceName: nicName(addr),
-			}
+			devName := nicName(addr)
 
 			// Collect PCI device metadata (vendor, device ID, subsystem, etc.).
-			pcie := pci.New(addr)
-			if err := pcie.Collect(); err != nil {
+			var pcie pci.PCI
+			pcie_dev := pci.New(addr)
+			if err := pcie_dev.Collect(); err != nil {
 				errsCh <- err
 			} else {
-				itf.PCI = *pcie
+				pcie = *pcie_dev
 			}
 
+			// Collect ethtool/LLDP data concurrently; store in local vars to
+			// avoid data races on the shared itf struct.
+			var lldpData LLDP
+			var ringBuf RingBuffer
+			var channel Channel
+
 			// Only collect ethtool/LLDP data when the device name is resolved.
-			if itf.DeviceName != "unknown" {
+			if devName != "unknown" {
 				var innerWg sync.WaitGroup
 				innerWg.Add(3)
 
 				go func() {
 					defer innerWg.Done()
-					lldp, err := lldpNeighbors(itf.DeviceName)
+					l, err := lldpNeighbors(devName)
 					if err != nil {
 						errsCh <- err
 					} else {
-						itf.LLDP = lldp
+						lldpData = l
 					}
 				}()
 
 				go func() {
 					defer innerWg.Done()
-					itf.RingBuffer = collectEthtoolRingBuffer(itf.DeviceName)
+					ringBuf = collectEthtoolRingBuffer(devName)
 				}()
 
 				go func() {
 					defer innerWg.Done()
-					itf.Channel = collectEthtoolChannel(itf.DeviceName)
+					channel = collectEthtoolChannel(devName)
 				}()
 
 				innerWg.Wait()
 			}
 
-			results[idx] = itf
+			results[idx] = PhyInterface{
+				DeviceName: devName,
+				PCI:        pcie,
+				LLDP:       lldpData,
+				RingBuffer: ringBuf,
+				Channel:    channel,
+			}
 		}(i, nic)
 	}
 

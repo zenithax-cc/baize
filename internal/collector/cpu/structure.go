@@ -11,7 +11,7 @@ type CPU struct {
 	Architecture string `json:"architecture,omitempty" name:"Architecture" output:"both"`
 	// Sockets is the total number of physical CPU sockets detected by lscpu.
 	Sockets        string `json:"sockets,omitempty" name:"Socket(s)" output:"both"`
-	CoresPerSocket string `json:"cores_per_socket,omitempty" name:"Cores Per Soket" output:"both"`
+	CoresPerSocket string `json:"cores_per_socket,omitempty" name:"Cores Per Socket" output:"both"`
 	ThreadsPerCore string `json:"threads_per_core,omitempty" name:"Threads Per Core" output:"both"`
 	// HyperThreading indicates the HT/SMT support and enable state.
 	HyperThreading string `json:"hyper_threading,omitempty" name:"Hyper Threading" output:"both"`
@@ -46,7 +46,7 @@ type CPU struct {
 	// Flags lists the CPU feature flags as reported by lscpu.
 	Flags []string `json:"flags,omitempty"`
 	// CPUEntries contains per-socket detailed data sourced from SMBIOS type-4 tables.
-	CPUEntries []*SMBIOSCPUEntry `json:"cpu_entries,omitempty" name:"cpu entriy" output:"detail"`
+	CPUEntries []*SMBIOSCPUEntry `json:"cpu_entries,omitempty" name:"CPU Entry" output:"detail"`
 	// threads holds per-logical-thread turbostat data; not exported in JSON.
 	threads []*ThreadEntry
 }

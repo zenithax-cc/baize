@@ -193,7 +193,7 @@ sudo ./baize -m memory -j
   Model         : Intel(R) Xeon(R) Gold 6338 CPU @ 2.00GHz
   Vendor        : Intel
   Socket(s)     : 2
-  Cores Per Soket: 32
+  Cores Per Socket: 32
   Threads Per Core: 2
   Hyper Threading: Enabled
   Power State   : Performance

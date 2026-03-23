@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -71,7 +70,6 @@ func convertUnit(value string) string {
 
 	numUint, err := strconv.ParseFloat(num, 64)
 	if err != nil {
-		fmt.Printf("meminfo parseuint: %v", err)
 		return value
 	}
 

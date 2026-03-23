@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	DefaultTimeout = 20 * time.Minute
+	DefaultTimeout = 30 * time.Second
 	DefaultShell   = "/bin/sh"
 )
 

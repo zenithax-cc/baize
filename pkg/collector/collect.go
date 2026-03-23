@@ -4,7 +4,6 @@ package collector
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -169,15 +168,4 @@ func (m *Manager) Collect(ctx context.Context) error {
 	}
 
 	return errors.Join(errs...)
-}
-
-// ToJSON marshals any value to indented JSON and prints it to stdout.
-func ToJSON(text any) error {
-	j, err := json.MarshalIndent(text, "  ", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal json: %w", err)
-	}
-
-	fmt.Println(string(j))
-	return nil
 }

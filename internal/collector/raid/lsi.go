@@ -155,7 +155,7 @@ func (lc *lsiController) parseCtrlCard(ctx context.Context) error {
 	}
 
 	if a := res.Adapter; a != nil {
-		lc.ctrl.SurpportedJBOD = a.SupportJBOD
+		lc.ctrl.SupportedJBOD = a.SupportJBOD
 		lc.ctrl.ForeignConfigImport = a.ForeignConfigImport
 	}
 

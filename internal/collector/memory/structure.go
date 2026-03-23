@@ -1,12 +1,12 @@
 package memory
 
 type Memory struct {
-	PhysicalMemorySize    string               `json:"physical_memory__size,omitempty" name:"Physical Memory" output:"both" color:"defaultGreen"`
+	PhysicalMemorySize    string               `json:"physical_memory_size,omitempty" name:"Physical Memory" output:"both" color:"defaultGreen"`
 	Maxslots              string               `json:"max_slots,omitempty" name:"Slot Max" output:"both"`
 	UsedSlots             string               `json:"used_slots,omitempty" name:"Slot Used" output:"both"`
 	MemTotal              string               `json:"memory_total,omitempty" name:"System Memory" output:"both"`
 	MemFree               string               `json:"memory_free,omitempty" name:"Memory Free" output:"both"`
-	MemAvailable          string               `json:"memory_available,omitempty" name:"Memory Avaliable" output:"both"`
+	MemAvailable          string               `json:"memory_available,omitempty" name:"Memory Available" output:"both"`
 	SwapCached            string               `json:"swap_cached,omitempty"`
 	SwapTotal             string               `json:"swap_total,omitempty" name:"Swap" output:"both"`
 	SwapFree              string               `json:"swap_free,omitempty"`
@@ -27,7 +27,7 @@ type Memory struct {
 	DiagnoseDetail        string               `json:"diagnose_detail,omitempty" name:"Diagnose Detail" output:"both" color:"Diagnose"`
 	EdacSlots             string               `json:"slots,omitempty"`
 	EdacMemorySize        string               `json:"edac_memory_size,omitempty"`
-	PhysicalMemoryEntries []*SmbiosMemoryEntry `json:"physical_memory_entries,omitempty" name:"memorys" output:"detail"`
+	PhysicalMemoryEntries []*SmbiosMemoryEntry `json:"physical_memory_entries,omitempty" name:"memories" output:"detail"`
 	EdacMemoryEntries     []*EdacMemoryEntry   `json:"edac_memory_entries,omitempty"`
 }
 

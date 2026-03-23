@@ -113,7 +113,7 @@ func GetOneBlock() string {
 func GetAllBlock() []string {
 	capcityCache.init()
 
-	res := make([]string, 0, len(capcityCache.blocks))
+	res := make([]string, len(capcityCache.blocks))
 	copy(res, capcityCache.blocks)
 
 	return res

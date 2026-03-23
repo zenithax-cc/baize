@@ -52,7 +52,7 @@ type controller struct {
 
 	SupportedDrives     string `json:"supported_drives,omitempty"`      // Supported drive interface types
 	RaidLevelSupported  string `json:"raid_level_supported,omitempty"`  // Supported RAID levels
-	SurpportedJBOD      string `json:"supports_jbod,omitempty"`         // Whether JBOD mode is supported
+	SupportedJBOD       string `json:"supports_jbod,omitempty"`         // Whether JBOD mode is supported
 	EnableJBOD          string `json:"enable_jbod,omitempty"`           // Whether JBOD mode is currently enabled
 	ForeignConfigImport string `json:"foreign_config_import,omitempty"` // Whether foreign configuration import is supported
 
@@ -129,10 +129,10 @@ type physicalDrive struct {
 	LinkSpeed   string `json:"link_speed,omitempty"`               // Physical link speed
 
 	// Drive state and rebuild information
-	State                 string `json:"state,omitempty"`                    // Current drive state (Onln, Offln, Rbld, etc.)
-	RebuildInfo           string `json:"rebuild_info,omitempty"`             // Rebuild progress information
-	MediaWearoutIndicator string `json:"media_wearout_indicator,omitempty"`  // SSD wear-level indicator (%)
-	AvailableReservdSpace string `json:"available_reserved_space,omitempty"` // Available reserved flash space (SSD)
+	State                  string `json:"state,omitempty"`                    // Current drive state (Onln, Offln, Rbld, etc.)
+	RebuildInfo            string `json:"rebuild_info,omitempty"`             // Rebuild progress information
+	MediaWearoutIndicator  string `json:"media_wearout_indicator,omitempty"`  // SSD wear-level indicator (%)
+	AvailableReservedSpace string `json:"available_reserved_space,omitempty"` // Available reserved flash space (SSD)
 
 	// Error counters and health status
 	ShieldCounter          string `json:"shield_counter,omitempty"`           // Shield diagnostics counter
