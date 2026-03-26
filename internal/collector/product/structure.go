@@ -1,7 +1,7 @@
 package product
 
 type OS struct {
-	KernelName    string `json:"kernel_name,omitempty" name:"OS Type"`
+	KernelName    string `json:"kernel_name,omitempty" name:"OS Type" output:"both"`
 	KernelRelease string `json:"kernel_release,omitempty" name:"Kernel Release"`
 	KernelVersion string `json:"kernel_version,omitempty"`
 	HostName      string `json:"host_name,omitempty"`
@@ -60,7 +60,7 @@ type Chassis struct {
 }
 
 type Product struct {
-	OS        `json:"os" name:"OS"`
+	OS
 	BIOS      `json:"bios" name:"BIOS"`
 	System    `json:"system" name:"System"`
 	BaseBoard `json:"base_board" name:"Baseboard"`

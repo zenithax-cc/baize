@@ -192,7 +192,7 @@ func (m *IPMI) BriefPrintln() {
 		Items: []*IPMIBrief{brief},
 	}
 
-	utils.SP.Print(wrapper, "brief")
+	utils.PrinterInstance.Print(wrapper, "brief")
 }
 
 // DetailPrintln prints full IPMI details (sensors, SEL, PSU) to stdout.
@@ -203,5 +203,5 @@ func (m *IPMI) DetailPrintln() {
 		Items: []*IPMI{m},
 	}
 
-	utils.SP.Print(wrapper, "detail")
+	utils.PrinterInstance.Print(wrapper, "detail")
 }

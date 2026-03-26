@@ -96,7 +96,7 @@ func (c *CPU) DetailPrintln() {
 
 	cpu.CPUInfo = append(cpu.CPUInfo, c)
 
-	utils.SP.Print(cpu, "detail")
+	utils.PrinterInstance.Print(cpu, "detail")
 }
 
 // BriefPrintln prints a brief CPU summary (key metrics only) to stdout.
@@ -107,7 +107,7 @@ func (c *CPU) BriefPrintln() {
 
 	cpu.CPUInfo = append(cpu.CPUInfo, c)
 
-	utils.SP.Print(cpu, "brief")
+	utils.PrinterInstance.Print(cpu, "brief")
 }
 
 // associateCores links per-thread turbostat data (frequency, temperature) to

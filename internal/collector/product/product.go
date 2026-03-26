@@ -74,7 +74,7 @@ func (p *Product) JSON() error {
 
 // DetailPrintln prints full product details (all SMBIOS sub-sections) to stdout.
 func (p *Product) DetailPrintln() {
-	p.BriefPrintln()
+	utils.PrinterInstance.Print(p, "PRODUCT INFO")
 }
 
 // BriefPrintln prints a concise server identity summary to stdout.
@@ -106,5 +106,5 @@ func (p *Product) BriefPrintln() {
 		Products: []*ProductBrief{&brief},
 	}
 
-	utils.SP.Print(wrapper, "brief")
+	utils.PrinterInstance.Print(wrapper, "PRODUCT INFO")
 }

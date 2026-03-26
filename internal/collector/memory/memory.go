@@ -69,13 +69,14 @@ func (m *Memory) Name() string {
 
 // DetailPrintln prints the full memory details (including per-DIMM entries) to stdout.
 func (m *Memory) DetailPrintln() {
-	memInfo := struct {
-		MemoryInfo []*Memory `name:"MEMORY INFO" output:"both"`
-	}{}
+	// memInfo := struct {
+	// 	MemoryInfo []*Memory `name:"MEMORY INFO" output:"both"`
+	// }{}
 
-	memInfo.MemoryInfo = append(memInfo.MemoryInfo, m)
+	// memInfo.MemoryInfo = append(memInfo.MemoryInfo, m)
 
-	utils.SP.Print(memInfo, "detail")
+	// utils.SP.Print(memInfo, "detail")
+	utils.PrinterInstance.PrintAll(m)
 }
 
 // BriefPrintln prints a brief memory summary grouped by manufacturer/size/speed/type,
@@ -102,7 +103,7 @@ func (m *Memory) BriefPrintln() {
 		memInfo.MemoryDetail = append(memInfo.MemoryDetail, key+" * "+strconv.Itoa(count))
 	}
 
-	utils.SP.Print(memInfo, "brief")
+	utils.PrinterInstance.Print(memInfo, "MEMORY INFO")
 }
 
 // associate correlates EDAC and SMBIOS data:

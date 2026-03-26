@@ -179,10 +179,10 @@ func (c *Controllers) JSON() error {
 
 // DetailPrintln prints full RAID controller and drive details to stdout.
 func (c *Controllers) DetailPrintln() {
-	utils.SP.Print(c, "detail")
+	utils.PrinterInstance.Print(c, "RAID INFO")
 }
 
 // BriefPrintln prints a brief RAID and NVMe summary to stdout.
 func (c *Controllers) BriefPrintln() {
-	utils.SP.Print(c, "brief")
+	utils.PrinterInstance.Print(c, "RAID INFO")
 }

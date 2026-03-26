@@ -73,12 +73,12 @@ func (g *GPU) JSON() error {
 }
 
 func (g *GPU) DetailPrintln() {
-	utils.SP.Print(g, "detail")
+	utils.PrinterInstance.Print(g, "detail")
 }
 
 // BriefPrintln prints a concise GPU summary to stdout.
 func (c *GPU) BriefPrintln() {
-	utils.SP.Print(c, "brief")
+	utils.PrinterInstance.Print(c, "brief")
 }
 
 func (g *GPU) fromDrm(ctx context.Context) error {

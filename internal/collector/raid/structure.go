@@ -9,19 +9,19 @@ import (
 // Controllers is the top-level container for all discovered storage controllers
 // (vendor RAID cards) and directly-attached NVMe drives.
 type Controllers struct {
-	Controller []*controller `json:"controller,omitempty" name:"Controller"`
+	Controller []*controller `json:"controller,omitempty" name:"Controller" output:"both"`
 	NVMe       []*nvme       `json:"nvme,omitempty" name:"NVMe"`
 }
 
 // controller holds all information for a single RAID controller card,
 // including firmware versions, drive/RAID statistics, and sub-component lists.
 type controller struct {
-	ID             string `json:"controller_id,omitempty" name:"Controller ID"` // Controller identifier
-	ProductName    string `json:"product_name,omitempty" name:"Product"`        // Product model name
-	CacheSize      string `json:"cache_size,omitempty" name:"Cache Size"`       // Onboard cache size
-	SerialNumber   string `json:"serial_number,omitempty"`                      // Controller serial number
-	SasAddress     string `json:"sas_address,omitempty"`                        // SAS address of the controller
-	ControllerTime string `json:"controller_time,omitempty"`                    // Current controller date/time
+	ID             string `json:"controller_id,omitempty" name:"Controller ID" output:"both"` // Controller identifier
+	ProductName    string `json:"product_name,omitempty" name:"Product" output:"both"`        // Product model name
+	CacheSize      string `json:"cache_size,omitempty" name:"Cache Size" output:"both"`       // Onboard cache size
+	SerialNumber   string `json:"serial_number,omitempty"`                                    // Controller serial number
+	SasAddress     string `json:"sas_address,omitempty"`                                      // SAS address of the controller
+	ControllerTime string `json:"controller_time,omitempty"`                                  // Current controller date/time
 
 	Firmware     string `json:"firmware_version,omitempty"` // Firmware version
 	BiosVersion  string `json:"bios_version,omitempty"`     // BIOS version

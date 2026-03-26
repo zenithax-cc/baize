@@ -115,5 +115,5 @@ func (n *Network) printInterfaces(outputType string) {
 		NICs: briefs,
 	}
 
-	utils.SP.Print(wrapper, outputType)
+	utils.PrinterInstance.Print(wrapper, "NETWORK")
 }
